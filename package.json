@@ -1,0 +1,22 @@
+{
+  "name": "your-web3-project",
+  "version": "1.0.0",
+  "description": "A full-stack Web3 application with Hardhat, frontend, and backend",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "frontend", 
+    "backend"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "build:all": "npm run build --workspaces --if-present",
+    "test:all": "npm run test --workspaces --if-present",
+    "dev:contracts": "npm run dev --workspace=contracts",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend"
+  },
+  "keywords": ["web3", "blockchain", "solidity", "hardhat"],
+  "author": "Alberto Butera",
+  "license": "MIT"
+}

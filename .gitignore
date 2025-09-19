@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*/.env
+*/.env.local
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+out/
+
+# Hardhat specific
+artifacts/
+cache/
+typechain-types/
+coverage/
+coverage.json
+
+# Frontend specific
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Backend specific
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary
+*.tmp
+*.temp
