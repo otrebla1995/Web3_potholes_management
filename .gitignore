@@ -27,6 +27,7 @@ cache/
 typechain-types/
 coverage/
 coverage.json
+gas_report.txt
 
 # Frontend specific
 .next/
