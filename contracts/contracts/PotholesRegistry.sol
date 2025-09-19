@@ -32,10 +32,21 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
     // State variables
     IPotholesToken public immutable potholeToken;
     string public cityName;
-    
     uint256 public nextReportId = 1;
-    uint256 public constant DUPLICATE_RADIUS = 10; // 10 meters
-    
+
+    // Grid configuration - city-specific
+    int256 public immutable cityMinLat;
+    int256 public immutable cityMaxLat;  
+    int256 public immutable cityMinLng;
+    int256 public immutable cityMaxLng;
+    uint256 public immutable grid_precision; // Coordinate units per grid cell
+
+    modifier withinCityBounds(int256 lat, int256 lng) {
+        require(lat >= cityMinLat && lat <= cityMaxLat, "Latitude outside city bounds");
+        require(lng >= cityMinLng && lng <= cityMaxLng, "Longitude outside city bounds");
+        _;
+    }
+
     // Rewards (in wei, considering token decimals)
     uint256 public originalReportReward = 10 * 10**18; // 10 PBC
     uint256 public duplicateReporterReward = 2 * 10**18; // 2 PBC  
@@ -108,10 +119,20 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         string memory _cityName,
         address _potholeToken,
         address _trustedForwarder,
-        address _initialOwner
+        address _initialOwner,
+        int256 _cityMinLat,
+        int256 _cityMaxLat,
+        int256 _cityMinLng,
+        int256 _cityMaxLng,
+        uint256 _gridPrecision
     ) ERC2771Context(_trustedForwarder) Ownable(_initialOwner) {
         cityName = _cityName;
         potholeToken = IPotholesToken(_potholeToken);
+        cityMinLat = _cityMinLat;
+        cityMaxLat = _cityMaxLat;
+        cityMinLng = _cityMinLng;
+        cityMaxLng = _cityMaxLng;
+        grid_precision = _gridPrecision;
     }
 
     // Citizen Management Functions
@@ -154,10 +175,10 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         int256 latitude,
         int256 longitude,
         string calldata ipfsHash
-    ) external onlyRegisteredCitizen nonReentrant returns (uint256) {
+    ) external onlyRegisteredCitizen withinCityBounds(latitude, longitude) nonReentrant returns (uint256) {
         require(bytes(ipfsHash).length > 0, "IPFS hash required");
-        
-        bytes32 locationHash = _getLocationHash(latitude, longitude, DUPLICATE_RADIUS);
+
+        bytes32 locationHash = _getLocationHash(latitude, longitude, grid_precision);
         uint256 existingReportId = locationToReportId[locationHash];
         
         if (existingReportId != 0) {
@@ -300,13 +321,13 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
     // Internal Functions
     function _getLocationHash(int256 lat, int256 lng, uint256 radiusMeters) 
         internal pure returns (bytes32) {
-        // Convert radius to coordinate precision
-        // Approximately 1111 units per meter in coordinate degrees (simplified)
-        int256 gridSize = int256(radiusMeters * 1111);
-        
-        // Create grid coordinates
-        int256 gridLat = lat / gridSize;
-        int256 gridLng = lng / gridSize;
+        // Assuming coordinates are in microdegrees (1e-6 degrees)
+        // 1 degree of latitude ~ 111 km
+        // 1 degree of longitude ~ 111 km * cos(latitude)
+        // In a real-world scenario, consider using a more accurate method.
+        // Convert coordinates to grid cells using fixed precision
+        int256 gridLat = lat / int256(GRID_PRECISION);
+        int256 gridLng = lng / int256(GRID_PRECISION);
         
         return keccak256(abi.encodePacked(gridLat, gridLng));
     }
