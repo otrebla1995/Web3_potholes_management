@@ -178,7 +178,7 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
     ) external onlyRegisteredCitizen withinCityBounds(latitude, longitude) nonReentrant returns (uint256) {
         require(bytes(ipfsHash).length > 0, "IPFS hash required");
 
-        bytes32 locationHash = _getLocationHash(latitude, longitude, grid_precision);
+        bytes32 locationHash = _getLocationHash(latitude, longitude);
         uint256 existingReportId = locationToReportId[locationHash];
         
         if (existingReportId != 0) {
@@ -245,12 +245,36 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
 
     // Municipal Management Functions
     function updateReportStatus(
-        uint256 reportId, 
+        uint256 reportId,
         PotholeStatus newStatus
     ) external onlyMunicipalAuthority validReportId(reportId) {
+        _updateReportStatus(reportId, newStatus, _msgSender());
+    }
+
+    function batchUpdateStatus(
+        uint256[] calldata reportIds,
+        PotholeStatus newStatus
+    ) external onlyMunicipalAuthority {
+        address updatedBy = _msgSender();
+        for (uint256 i = 0; i < reportIds.length; i++) {
+            uint256 reportId = reportIds[i];
+            if (reportId > 0 && reportId < nextReportId && reports[reportId].status != newStatus) {
+                _updateReportStatus(reportId, newStatus, updatedBy);
+            }
+        }
+    }
+
+    // Internal function containing the core update logic
+    function _updateReportStatus(
+        uint256 reportId,
+        PotholeStatus newStatus,
+        address updatedBy
+    ) internal {
+        require(reportId > 0 && reportId < nextReportId, "Invalid report ID");
+
         PotholeStatus oldStatus = reports[reportId].status;
         require(oldStatus != newStatus, "Status unchanged");
-        
+
         reports[reportId].status = newStatus;
 
         if(newStatus == PotholeStatus.InProgress) {
@@ -265,20 +289,8 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
                 potholeToken.mint(reports[reportId].reporter, originalReportFixedReward);
             }
         }
-        
-        emit PotholeStatusUpdated(reportId, oldStatus, newStatus, _msgSender());
-    }
-    
-    function batchUpdateStatus(
-        uint256[] calldata reportIds,
-        PotholeStatus newStatus
-    ) external onlyMunicipalAuthority {
-        for (uint256 i = 0; i < reportIds.length; i++) {
-            uint256 reportId = reportIds[i];
-            if (reportId > 0 && reportId < nextReportId && reports[reportId].status != newStatus) {
-                this.updateReportStatus(reportId, newStatus);
-            }
-        }
+
+        emit PotholeStatusUpdated(reportId, oldStatus, newStatus, updatedBy);
     }
 
     // View Functions
@@ -319,16 +331,16 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
     }
 
     // Internal Functions
-    function _getLocationHash(int256 lat, int256 lng, uint256 radiusMeters) 
-        internal pure returns (bytes32) {
+    function _getLocationHash(int256 lat, int256 lng) 
+        internal view returns (bytes32) {
         // Assuming coordinates are in microdegrees (1e-6 degrees)
         // 1 degree of latitude ~ 111 km
         // 1 degree of longitude ~ 111 km * cos(latitude)
         // In a real-world scenario, consider using a more accurate method.
         // Convert coordinates to grid cells using fixed precision
-        int256 gridLat = lat / int256(GRID_PRECISION);
-        int256 gridLng = lng / int256(GRID_PRECISION);
-        
+        int256 gridLat = lat / int256(grid_precision);
+        int256 gridLng = lng / int256(grid_precision);
+
         return keccak256(abi.encodePacked(gridLat, gridLng));
     }
 
