@@ -1,6 +1,8 @@
 {
     "PotholesDeploymentModule": {
         "parameters": {
+            "networkName": "localhost",
+            "chainId": 31337,
             "initialTokenRecipient": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
             "tokenOwner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
             "registryOwner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
