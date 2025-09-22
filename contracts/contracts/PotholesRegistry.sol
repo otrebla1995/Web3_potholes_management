@@ -91,7 +91,13 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         PotholeStatus newStatus,
         address indexed updatedBy
     );
-    
+
+    event PotholeRejected(
+        uint256 indexed reportId,
+        address indexed rejectedBy,
+        string reason
+    );
+
     event RewardSettingsUpdated(
         uint256 originalReportReward,
         uint256 duplicateReporterReward,
@@ -180,8 +186,11 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
 
         bytes32 locationHash = _getLocationHash(latitude, longitude);
         uint256 existingReportId = locationToReportId[locationHash];
-        
-        if (existingReportId != 0) {
+        PotholeStatus status = reports[existingReportId].status;
+
+        require(status != PotholeStatus.InProgress, "Cannot report location in progress");
+
+        if (existingReportId != 0 && (status != PotholeStatus.Rejected && status != PotholeStatus.Completed)) {
             // This is a duplicate report
             require(!userReportedLocation[_msgSender()][existingReportId], 
                     "You already reported this pothole");
@@ -201,11 +210,6 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
                 longitude,
                 ipfsHash
             );
-            
-            // Reward both reporters
-            // if (duplicateReporterReward > 0) {
-            //     potholeToken.mint(_msgSender(), duplicateReporterReward);
-            // }
             
             return existingReportId;
             
@@ -234,11 +238,6 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
             
             emit PotholeReported(reportId, _msgSender(), latitude, longitude, ipfsHash);
             
-            // Reward original reporter
-            // if (originalReportReward > 0) {
-            //     potholeToken.mint(_msgSender(), originalReportReward);
-            // }
-            
             return reportId;
         }
     }
@@ -248,7 +247,7 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         uint256 reportId,
         PotholeStatus newStatus
     ) external onlyMunicipalAuthority validReportId(reportId) {
-        _updateReportStatus(reportId, newStatus, _msgSender());
+        _updateReportStatus(reportId, newStatus, _msgSender(), "");
     }
 
     function batchUpdateStatus(
@@ -259,7 +258,7 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < reportIds.length; i++) {
             uint256 reportId = reportIds[i];
             if (reportId > 0 && reportId < nextReportId && reports[reportId].status != newStatus) {
-                _updateReportStatus(reportId, newStatus, updatedBy);
+                _updateReportStatus(reportId, newStatus, updatedBy, "");
             }
         }
     }
@@ -268,12 +267,15 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
     function _updateReportStatus(
         uint256 reportId,
         PotholeStatus newStatus,
-        address updatedBy
+        address updatedBy,
+        string memory reason
     ) internal {
         require(reportId > 0 && reportId < nextReportId, "Invalid report ID");
 
         PotholeStatus oldStatus = reports[reportId].status;
         require(oldStatus != newStatus, "Status unchanged");
+        require(oldStatus != PotholeStatus.Rejected, "Cannot update rejected pothole");
+        require(oldStatus != PotholeStatus.Completed, "Cannot update completed pothole");
 
         reports[reportId].status = newStatus;
 
@@ -288,6 +290,10 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
             if (originalReportFixedReward > 0) {
                 potholeToken.mint(reports[reportId].reporter, originalReportFixedReward);
             }
+        }
+        if(newStatus == PotholeStatus.Rejected) {
+            // Emit rejection event with reason
+            emit PotholeRejected(reportId, updatedBy, reason);
         }
 
         emit PotholeStatusUpdated(reportId, oldStatus, newStatus, updatedBy);
