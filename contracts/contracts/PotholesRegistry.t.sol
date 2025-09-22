@@ -470,6 +470,141 @@ contract PotholesRegistryTest is Test {
         registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.Reported);
     }
 
+    function test_submitReport_toCompletedLocation() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create initial report
+        vm.prank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Mark as completed
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId1, PotholesRegistry.PotholeStatus.Completed);
+
+        // Submit new report to same location (should create new report)
+        vm.prank(citizen2);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeReported(2, citizen2, VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        uint256 reportId2 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        // Should create new report, not duplicate
+        assertEq(reportId2, 2);
+        assertEq(registry.totalReports(), 2);
+
+        // Verify new report has correct status
+        PotholesRegistry.PotholeReport memory newReport = registry.getReport(reportId2);
+        assertEq(uint8(newReport.status), uint8(PotholeStatus.Reported));
+        assertEq(newReport.duplicateCount, 1);
+        assertEq(newReport.reporter, citizen2);
+    }
+
+    function test_submitReport_toRejectedLocation() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create initial report
+        vm.prank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Mark as rejected
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId1, PotholesRegistry.PotholeStatus.Rejected);
+
+        // Submit new report to same location (should create new report)
+        vm.prank(citizen2);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeReported(2, citizen2, VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        uint256 reportId2 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        // Should create new report, not duplicate
+        assertEq(reportId2, 2);
+        assertEq(registry.totalReports(), 2);
+
+        // Verify new report has correct status
+        PotholesRegistry.PotholeReport memory newReport = registry.getReport(reportId2);
+        assertEq(uint8(newReport.status), uint8(PotholeStatus.Reported));
+        assertEq(newReport.duplicateCount, 1);
+        assertEq(newReport.reporter, citizen2);
+    }
+
+    function test_submitReport_toInProgressLocation() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create initial report
+        vm.prank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Mark as in progress
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId1, PotholesRegistry.PotholeStatus.InProgress);
+
+        // Try to submit new report to same location (should revert)
+        vm.prank(citizen2);
+        vm.expectRevert("Cannot report location in progress");
+        registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        // Verify total reports unchanged
+        assertEq(registry.totalReports(), 1);
+    }
+
+    function test_updateReportStatus_cannotUpdateRejected() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Mark as rejected
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.Rejected);
+
+        // Try to update rejected pothole (should revert)
+        vm.prank(municipal1);
+        vm.expectRevert("Cannot update rejected pothole");
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.InProgress);
+    }
+
+    function test_updateReportStatus_cannotUpdateCompleted() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Mark as completed
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.Completed);
+
+        // Try to update completed pothole (should revert)
+        vm.prank(municipal1);
+        vm.expectRevert("Cannot update completed pothole");
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.InProgress);
+    }
+
     function test_batchUpdateStatus() public {
         // Setup
         vm.startPrank(owner);
