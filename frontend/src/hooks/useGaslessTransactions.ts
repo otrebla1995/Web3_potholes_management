@@ -100,7 +100,7 @@ export function useGaslessTransactions() {
       // 7. Send to relayer
       toast.loading('Relaying transaction...')
       
-      const relayResponse = await fetch('/api/relay', {
+      const relayResponse = await fetch('http://localhost:3001/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
