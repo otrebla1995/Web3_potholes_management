@@ -23,25 +23,15 @@ export class BlockchainService {
     )
   }
 
-  async getNonce(from: string): Promise<string> {
+  async getNonce(from: string): Promise<bigint> {
     const nonce = await this.forwarder.nonces(from)
-    return nonce.toString()
+    console.log(`Fetched nonce for ${from}:`, nonce.toString())
+    return nonce
   }
 
-  async verifySignature(request: any, signature: string): Promise<boolean> {
+  async verifySignature(request: any): Promise<boolean> {
     try {
-      // Transform request to match ForwardRequestData struct
-      const forwardRequestData = {
-        from: request.from,
-        to: request.to,
-        value: request.value,
-        gas: request.gas,
-        deadline: request.deadline || Math.floor(Date.now() / 1000) + 3600, // 1 hour from now if not provided
-        data: request.data,
-        signature: signature
-      }
-
-      const isValid = await this.forwarder.verify(forwardRequestData)
+      const isValid = await this.forwarder.verify(request)
       return isValid
     } catch (error) {
       console.error('Signature verification failed:', error)
@@ -49,27 +39,11 @@ export class BlockchainService {
     }
   }
 
-  async executeMetaTx(request: any, signature: string): Promise<string> {
+  async executeMetaTx(request: any): Promise<string> {
     try {
       console.log('Executing meta-transaction...')
       console.log('Request:', request)
-      console.log('Signature:', signature)
-
-      // Transform request to match ForwardRequestData struct
-      const forwardRequestData = {
-        from: request.from,
-        to: request.to,
-        value: request.value,
-        gas: request.gas,
-        deadline: request.deadline || Math.floor(Date.now() / 1000) + 3600, // 1 hour from now if not provided
-        data: request.data,
-        signature: signature
-      }
-
-      const tx = await this.forwarder.execute(forwardRequestData, {
-        gasLimit: 300000, // Generous gas limit
-        value: request.value || 0 // Include value if present
-      })
+      const tx = await this.forwarder.execute(request)
 
       console.log('Transaction sent:', tx.hash)
 

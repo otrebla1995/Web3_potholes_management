@@ -1,15 +1,15 @@
-export interface ForwardRequest {
+export interface ForwardRequestData {
   from: string
   to: string
-  value: string
-  gas: string
-  nonce: string
+  value: bigint
+  gas: bigint
+  deadline: bigint
   data: string
+  signature: string
 }
 
 export interface MetaTxRequest {
-  request: ForwardRequest
-  signature: string
+  request: ForwardRequestData
 }
 
 export interface RelayResponse {

@@ -43,6 +43,17 @@ export function useGaslessTransactions() {
 
       console.log('Coordinates:', { latInt: latInt.toString(), lngInt: lngInt.toString() })
 
+      // Get the current nonce for the user from the Forwarder contract
+      const nonce = await fetch("http://localhost:3001/api/relay/nonce?address=" + address)
+        .then(res => res.json())
+        .then(data => BigInt(data.nonce))
+
+      if (nonce === undefined) {
+        throw new Error('Failed to fetch nonce from Forwarder contract')
+      }
+
+      console.log('Fetched nonce:', nonce.toString())
+
       // 2. Encode the function call that we want to execute
       const data = encodeFunctionData({
         abi: PotholesRegistryABI.abi,
@@ -55,7 +66,7 @@ export function useGaslessTransactions() {
       // 3. Define EIP-712 domain for the Forwarder
       const domain = {
         name: 'PotholesForwarder',
-        version: '0.0.1',
+        version: '1',
         chainId: BigInt(chainId),
         verifyingContract: FORWARDER_ADDRESS,
       }
@@ -63,26 +74,38 @@ export function useGaslessTransactions() {
       // 4. Define the ForwardRequest type structure
       const types = {
         ForwardRequest: [
-          { name: 'from', type: 'address' },
-          { name: 'to', type: 'address' },
-          { name: 'value', type: 'uint256' },
-          { name: 'gas', type: 'uint256' },
-          { name: 'nonce', type: 'uint256' },
-          { name: 'data', type: 'bytes' },
-        ],
-      }
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "gas", type: "uint256" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint48" },
+            { name: "data", type: "bytes" }
+        ]
+      };
 
       // 5. Build the forward request
       const request = {
         from: address,
         to: contractAddress,
         value: BigInt(0),
-        gas: BigInt(200000), // Enough gas for the operation
-        nonce: BigInt(Date.now()), // Simplified nonce for demo
-        data,
+        gas: BigInt(300000), // Enough gas for the operation
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 3600), // 1 hour from now
+        data: data,
+        signature: '0x', // Placeholder, will be filled after signing
       }
 
       console.log('Forward request:', request)
+
+      const message = {
+        from: request.from,
+        to: request.to,
+        value: request.value,
+        gas: request.gas,
+        nonce: nonce,
+        deadline: request.deadline,
+        data: request.data
+    };
 
       // 6. Ask user to sign the typed data
       toast.loading('Please sign the gasless transaction...')
@@ -91,7 +114,7 @@ export function useGaslessTransactions() {
         domain,
         types,
         primaryType: 'ForwardRequest',
-        message: request,
+        message: message,
       })
 
       console.log('Signature:', signature)
@@ -109,10 +132,10 @@ export function useGaslessTransactions() {
             to: request.to,
             value: request.value.toString(),
             gas: request.gas.toString(),
-            nonce: request.nonce.toString(),
+            deadline: request.deadline.toString(),
             data: request.data,
+            signature: signature
           }, 
-          signature 
         }),
       })
 

@@ -22,10 +22,10 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const metaTxRequest = req.body
     
-    if (!metaTxRequest.request || !metaTxRequest.signature) {
+    if (!metaTxRequest.request) {
       return res.status(400).json({
         success: false,
-        error: 'Missing request or signature'
+        error: 'Missing request'
       })
     }
 
@@ -43,6 +43,22 @@ router.post('/', async (req: Request, res: Response) => {
       success: false,
       error: 'Internal server error'
     })
+  }
+})
+
+// GET /api/relay/nonce - Get nonce for an address
+router.get('/nonce', async (req: Request, res: Response) => {
+  const address = req.query.address as string
+  if (!address) {
+    return res.status(400).json({ error: 'Missing address parameter' })
+  }
+
+  try {
+    const nonce = await relayerService.getNonce(address)
+    res.json({ nonce: nonce.toString() })
+  } catch (error) {
+    console.error('Nonce error:', error)
+    res.status(500).json({ error: 'Failed to get nonce' })
   }
 })
 

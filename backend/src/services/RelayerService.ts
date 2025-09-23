@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { ForwardRequest, MetaTxRequest, RelayResponse, RelayerConfig } from '../types/metaTx'
+import { ForwardRequestData, MetaTxRequest, RelayResponse, RelayerConfig } from '../types/metaTx'
 import { BlockchainService } from '../utils/blockchain'
 
 export class RelayerService {
@@ -16,7 +16,8 @@ export class RelayerService {
     console.log('Processing meta-transaction request...')
     
     try {
-      const { request, signature } = metaTxRequest
+
+      const { request } = metaTxRequest
 
       // 1. Validate request format
       if (!this.isValidRequest(request)) {
@@ -30,17 +31,17 @@ export class RelayerService {
       const contractRequest = {
         from: request.from,
         to: request.to,
-        value: request.value,
-        gas: request.gas,
-        nonce: request.nonce,
-        data: request.data
+        value: BigInt(request.value),
+        gas: BigInt(request.gas),
+        deadline: BigInt(request.deadline),
+        data: request.data,
+        signature: request.signature
       }
 
       // 3. Verify signature
       console.log('Verifying signature...')
       const isValidSignature = await this.blockchain.verifySignature(
-        contractRequest, 
-        signature
+        contractRequest
       )
 
       if (!isValidSignature) {
@@ -65,7 +66,7 @@ export class RelayerService {
 
       // 5. Execute the meta-transaction
       console.log('Executing meta-transaction...')
-      const txHash = await this.blockchain.executeMetaTx(contractRequest, signature)
+      const txHash = await this.blockchain.executeMetaTx(contractRequest)
 
       return {
         success: true,
@@ -82,15 +83,20 @@ export class RelayerService {
     }
   }
 
-  private isValidRequest(request: ForwardRequest): boolean {
+  private isValidRequest(request: ForwardRequestData): boolean {
     return !!(
       request.from &&
       request.to &&
       request.value !== undefined &&
       request.gas &&
-      request.nonce !== undefined &&
+      request.deadline !== undefined &&
       request.data
     )
+  }
+
+  async getNonce(address: string): Promise<bigint> {
+    console.log(`Getting nonce for address: ${address}`)
+    return this.blockchain.getNonce(address)
   }
 
   async getStatus() {
