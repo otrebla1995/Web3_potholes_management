@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
 import { useCitizenActions } from '@/hooks/useCitizenActions'
-import { MapPin, Camera, Loader2, Navigation } from 'lucide-react'
+import { useGaslessTransactions } from '@/hooks/useGaslessTransactions'
+import { MapPin, Camera, Loader2, Navigation, Zap } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
 export function PotholeReportForm() {
@@ -12,13 +14,22 @@ export function PotholeReportForm() {
   const [longitude, setLongitude] = useState('')
   const [description, setDescription] = useState('')
   const [isGettingLocation, setIsGettingLocation] = useState(false)
+  const [useGasless, setUseGasless] = useState(true) // Default to gasless
   
+  // Regular transaction hook
   const {
     submitReport,
     getCurrentLocation,
     isPending,
     isConfirming,
   } = useCitizenActions()
+
+  // Gasless transaction hook
+  const {
+    submitReportGasless,
+    isSubmitting: isGaslessSubmitting,
+    isGaslessAvailable,
+  } = useGaslessTransactions()
 
   const handleGetLocation = async () => {
     setIsGettingLocation(true)
@@ -51,17 +62,32 @@ export function PotholeReportForm() {
       return
     }
     
-    await submitReport(lat, lng, description)
+    console.log('🚀 Submitting report:', { 
+      method: useGasless ? 'gasless' : 'regular',
+      lat, lng, description 
+    })
+    
+    let success = false
+    
+    // Choose submission method
+    if (useGasless && isGaslessAvailable) {
+      const txHash = await submitReportGasless(lat, lng, description)
+      success = !!txHash
+    } else {
+      await submitReport(lat, lng, description)
+      // For regular transactions, success is handled by the hook
+      success = true
+    }
     
     // Reset form on success
-    if (!isPending) {
+    if (success) {
       setLatitude('')
       setLongitude('')
       setDescription('')
     }
   }
 
-  const isLoading = isPending || isConfirming
+  const isLoading = isPending || isConfirming || isGaslessSubmitting
 
   return (
     <Card>
@@ -143,44 +169,74 @@ export function PotholeReportForm() {
             />
           </div>
 
-          {/* Photo Section (Placeholder) */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Photo (Optional)
-            </label>
-            <div className="border-2 border-dashed border-slate-200 rounded-md p-6 text-center bg-slate-50">
-              <Camera className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-sm text-slate-500 mb-2">Photo upload coming soon</p>
-              <p className="text-xs text-slate-400">For now, include photo details in description</p>
+          {/* Gasless Toggle - Only show if available */}
+          {isGaslessAvailable && (
+            <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Zap className="h-5 w-5 text-green-600" />
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-semibold text-green-900">Gasless Transaction</span>
+                      <Badge className="bg-green-100 text-green-800 border-green-300">FREE</Badge>
+                    </div>
+                    <p className="text-xs text-green-700 mt-1">
+                      No ETH required - just sign the message
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useGasless}
+                    onChange={(e) => setUseGasless(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                    disabled={isLoading}
+                  />
+                  <span className="text-sm font-medium text-green-800">Enable</span>
+                </label>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Submit Button */}
           <Button 
             type="submit" 
             variant="report" 
             disabled={isLoading || !latitude || !longitude || !description}
-            className="w-full"
+            className="w-full h-12 text-base font-semibold"
           >
             {isLoading ? (
               <div className="flex items-center space-x-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{isPending ? 'Submitting...' : 'Confirming...'}</span>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>
+                  {isGaslessSubmitting ? 'Processing Gasless Transaction...' : 
+                   isPending ? 'Submitting to Blockchain...' : 'Confirming Transaction...'}
+                </span>
               </div>
             ) : (
-              'Submit Pothole Report'
+              <div className="flex items-center space-x-2">
+                {useGasless && isGaslessAvailable && <Zap className="h-4 w-4" />}
+                <span>
+                  {useGasless && isGaslessAvailable ? 'Submit Report (Free)' : 'Submit Pothole Report'}
+                </span>
+              </div>
             )}
           </Button>
         </form>
 
-        {/* Help Text */}
+        {/* Enhanced Help Text */}
         <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-md">
           <h4 className="text-sm font-medium text-orange-900 mb-2">Reporting Tips:</h4>
           <ul className="text-sm text-orange-800 space-y-1">
             <li>• Use the location button for accurate GPS coordinates</li>
             <li>• Describe the size and severity of the pothole</li>
             <li>• Mention if it affects traffic or poses safety risks</li>
-            <li>• You'll earn PBC tokens for valid reports!</li>
+            {useGasless && isGaslessAvailable ? (
+              <li>• ⚡ Gasless mode: You only need to sign - no ETH required!</li>
+            ) : (
+              <li>• You'll earn PBC tokens for valid reports!</li>
+            )}
           </ul>
         </div>
       </CardContent>
