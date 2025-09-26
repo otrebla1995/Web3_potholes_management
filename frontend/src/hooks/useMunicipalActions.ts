@@ -120,7 +120,6 @@ export function useMunicipalActions() {
     if (!publicClient || !contractAddress) return
 
     setIsLoadingReports(true)
-    console.log('⚡ Fetching reports via events (fast & optimized)...')
 
     try {
       // Step 1: Get all PotholeReported events
