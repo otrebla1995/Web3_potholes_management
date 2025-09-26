@@ -52,6 +52,28 @@ export function useCitizenActions() {
     return Number(coord) / 1000000
   }
 
+  // Check if user has already reported at this location
+  const hasUserReportedAtLocation = (latitude: number, longitude: number): boolean => {
+    const latInt = coordinateToInt(latitude)
+    const lngInt = coordinateToInt(longitude)
+
+    return userReports.some(report => {
+
+      // check the grid cell is the same
+      const gridPrecision = process.env.NEXT_PUBLIC_GRID_PRECISION || 1000 // 0.001 degrees ~ 100m
+      const latCell = latInt / BigInt(gridPrecision)
+      const lngCell = lngInt / BigInt(gridPrecision)
+      const reportLatCell = report.latitude / BigInt(gridPrecision)
+      const reportLngCell = report.longitude / BigInt(gridPrecision)
+
+      if (latCell === reportLatCell && lngCell === reportLngCell) {
+        return true
+      }
+
+      return false
+    })
+  }
+
   // Submit pothole report
   const submitReport = async (
     latitude: number,
@@ -216,16 +238,19 @@ export function useCitizenActions() {
     submitReport,
     getCurrentLocation,
     refreshData,
-    
+
+    // Validation
+    hasUserReportedAtLocation,
+
     // State
     isPending,
     isConfirming,
     isSuccess,
-    
+
     // Data
     totalReports: totalReports ? Number(totalReports) : 0,
     userReports,
-    
+
     // Utilities
     coordinateToInt,
     intToCoordinate,

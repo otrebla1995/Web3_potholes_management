@@ -20,6 +20,7 @@ export function PotholeReportForm() {
   const {
     submitReport,
     getCurrentLocation,
+    hasUserReportedAtLocation,
     isPending,
     isConfirming,
   } = useCitizenActions()
@@ -48,27 +49,33 @@ export function PotholeReportForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!latitude || !longitude || !description) {
       toast.error('Please fill all fields')
       return
     }
-    
+
     const lat = parseFloat(latitude)
     const lng = parseFloat(longitude)
-    
+
     if (isNaN(lat) || isNaN(lng)) {
       toast.error('Please enter valid coordinates')
       return
     }
-    
-    console.log('🚀 Submitting report:', { 
+
+    // Check if user has already reported at this location
+    if (hasUserReportedAtLocation(lat, lng)) {
+      toast.error('⚠️ You have already reported a pothole at this location. Please check your previous reports.')
+      return
+    }
+
+    console.log('🚀 Submitting report:', {
       method: useGasless ? 'gasless' : 'regular',
-      lat, lng, description 
+      lat, lng, description
     })
-    
+
     let success = false
-    
+
     // Choose submission method
     if (useGasless && isGaslessAvailable) {
       const txHash = await submitReportGasless(lat, lng, description)
@@ -78,7 +85,7 @@ export function PotholeReportForm() {
       // For regular transactions, success is handled by the hook
       success = true
     }
-    
+
     // Reset form on success
     if (success) {
       setLatitude('')
