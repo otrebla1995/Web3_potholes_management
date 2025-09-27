@@ -222,7 +222,7 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
                 latitude: latitude,
                 longitude: longitude,
                 ipfsHash: ipfsHash,
-                duplicateCount: 1,
+                duplicateCount: 0,
                 reportedAt: block.timestamp,
                 reporter: _msgSender(),
                 status: PotholeStatus.Reported

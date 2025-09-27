@@ -113,7 +113,7 @@ export function useCitizenActions() {
         functionName: 'submitReport',
         args: [latInt, lngInt, ipfsHash]
       })
-      
+
       toast.success('Submitting pothole report...')
     } catch (error: any) {
       console.error('Error submitting report:', error)
@@ -186,6 +186,25 @@ export function useCitizenActions() {
         }
       })
 
+      // Get duplicate report events
+      const duplicateEvents = await publicClient.getLogs({
+        address: contractAddress,
+        event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
+        fromBlock: BigInt(0),
+        toBlock: 'latest'
+      })
+
+      const duplicateCountMap = new Map<number, number>()
+      duplicateEvents.forEach(log => {
+        const reportId = Number(log.args.originalReportId)
+        const count = Number(log.args.newDuplicateCount)
+
+        const currentCount = duplicateCountMap.get(reportId) ?? 0
+        if (count > currentCount) {
+          duplicateCountMap.set(reportId, count)
+        }
+      })
+
       // Build user reports
       const reports: PotholeReport[] = []
       for (const log of reportedEvents) {
@@ -197,7 +216,7 @@ export function useCitizenActions() {
           latitude: log.args.latitude as bigint,
           longitude: log.args.longitude as bigint,
           ipfsHash: log.args.ipfsHash as string,
-          duplicateCount: 0, // Can fetch if needed
+          duplicateCount: duplicateCountMap.get(reportId) ?? 0,
           reportedAt: Number(block.timestamp),
           reporter: log.args.reporter as string,
           status: statusMap.get(reportId) ?? 0
