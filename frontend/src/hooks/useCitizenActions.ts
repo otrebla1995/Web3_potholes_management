@@ -1,11 +1,12 @@
 'use client'
 
-import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
+import { useState, useEffect } from 'react'
+import { useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi'
 import { useChainId, useAccount } from 'wagmi'
 import { contractAddresses } from '@/lib/config'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { toast } from 'react-hot-toast'
-import { useState, useEffect } from 'react'
+import { parseAbiItem } from 'viem'
 
 export interface PotholeReport {
   id: number
@@ -15,22 +16,19 @@ export interface PotholeReport {
   duplicateCount: number
   reportedAt: number
   reporter: string
-  status: number // 0: Reported, 1: InProgress, 2: Completed, 3: Rejected
+  status: number
 }
 
 export function useCitizenActions() {
   const { address } = useAccount()
   const chainId = useChainId()
+  const publicClient = usePublicClient()
   const contractAddress = contractAddresses[chainId as keyof typeof contractAddresses]
   const [userReports, setUserReports] = useState<PotholeReport[]>([])
 
   // Write contract hook
-  const { writeContract, isPending, data: hash, error } = useWriteContract()
-
-  // Wait for transaction confirmation
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  })
+  const { writeContract, isPending, data: hash } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
 
   // Read contract data
   const { data: totalReports, refetch: refetchTotalReports } = useReadContract({
@@ -45,14 +43,35 @@ export function useCitizenActions() {
     functionName: 'nextReportId',
   })
 
-  // Convert coordinates to the format expected by the contract
+  // Convert coordinates
   const coordinateToInt = (coord: number): bigint => {
-    // Contract expects coordinates multiplied by 1e6 for precision
     return BigInt(Math.round(coord * 1000000))
   }
 
   const intToCoordinate = (coord: bigint): number => {
     return Number(coord) / 1000000
+  }
+
+  // Check if user has already reported at this location
+  const hasUserReportedAtLocation = (latitude: number, longitude: number): boolean => {
+    const latInt = coordinateToInt(latitude)
+    const lngInt = coordinateToInt(longitude)
+
+    return userReports.some(report => {
+
+      // check the grid cell is the same
+      const gridPrecision = process.env.NEXT_PUBLIC_GRID_PRECISION || 1000 // 0.001 degrees ~ 100m
+      const latCell = latInt / BigInt(gridPrecision)
+      const lngCell = lngInt / BigInt(gridPrecision)
+      const reportLatCell = report.latitude / BigInt(gridPrecision)
+      const reportLngCell = report.longitude / BigInt(gridPrecision)
+
+      if (latCell === reportLatCell && lngCell === reportLngCell) {
+        return true
+      }
+
+      return false
+    })
   }
 
   // Submit pothole report
@@ -84,19 +103,15 @@ export function useCitizenActions() {
     }
 
     try {
-      // For now, we'll use the description as IPFS hash
-      // In a real app, you'd upload to IPFS first
+      const latInt = coordinateToInt(latitude)
+      const lngInt = coordinateToInt(longitude)
       const ipfsHash = `description:${description}`
 
       await writeContract({
         address: contractAddress,
         abi: PotholesRegistryABI.abi,
         functionName: 'submitReport',
-        args: [
-          coordinateToInt(latitude),
-          coordinateToInt(longitude),
-          ipfsHash
-        ],
+        args: [latInt, lngInt, ipfsHash]
       })
       
       toast.success('Submitting pothole report...')
@@ -106,7 +121,7 @@ export function useCitizenActions() {
     }
   }
 
-  // Get current location using browser API
+  // Get current location
   const getCurrentLocation = (): Promise<{ latitude: number; longitude: number }> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -133,34 +148,74 @@ export function useCitizenActions() {
     })
   }
 
-  // Fetch all reports (for demo purposes)
-  const fetchAllReports = async () => {
-    if (!contractAddress || !nextReportId) return
+  // Fetch user's reports via events (OPTIMIZED)
+  const fetchUserReports = async () => {
+    if (!publicClient || !contractAddress || !address) return
 
     try {
-      const reports: PotholeReport[] = []
-      const totalCount = Number(nextReportId) - 1
+      console.log('⚡ Fetching user reports via events...')
 
-      // Fetch reports one by one (in production, you'd use a better method)
-      for (let i = 1; i <= Math.min(totalCount, 10); i++) {
-        try {
-          // This is a simplified approach - in reality you'd use event logs or subgraph
-          // For now, we'll just show placeholder data
-        } catch (error) {
-          console.error(`Error fetching report ${i}:`, error)
+      // Get reports where user is the reporter
+      const reportedEvents = await publicClient.getLogs({
+        address: contractAddress,
+        event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
+        args: {
+          reporter: address // Filter by user address
+        },
+        fromBlock: BigInt(0),
+        toBlock: 'latest'
+      })
+
+      console.log(`📋 Found ${reportedEvents.length} reports by user`)
+
+      // Get status updates for these reports
+      const reportIds = reportedEvents.map(log => Number(log.args.reportId))
+      const statusUpdateEvents = await publicClient.getLogs({
+        address: contractAddress,
+        event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
+        fromBlock: BigInt(0),
+        toBlock: 'latest'
+      })
+
+      // Build status map
+      const statusMap = new Map<number, number>()
+      statusUpdateEvents.forEach(log => {
+        const reportId = Number(log.args.reportId)
+        if (reportIds.includes(reportId)) {
+          statusMap.set(reportId, Number(log.args.newStatus))
         }
+      })
+
+      // Build user reports
+      const reports: PotholeReport[] = []
+      for (const log of reportedEvents) {
+        const reportId = Number(log.args.reportId)
+        const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
+
+        reports.push({
+          id: reportId,
+          latitude: log.args.latitude as bigint,
+          longitude: log.args.longitude as bigint,
+          ipfsHash: log.args.ipfsHash as string,
+          duplicateCount: 0, // Can fetch if needed
+          reportedAt: Number(block.timestamp),
+          reporter: log.args.reporter as string,
+          status: statusMap.get(reportId) ?? 0
+        })
       }
 
-      setUserReports(reports)
+      setUserReports(reports.sort((a, b) => b.reportedAt - a.reportedAt))
+      console.log(`✅ Fetched ${reports.length} user reports`)
+
     } catch (error) {
-      console.error('Error fetching reports:', error)
+      console.error('Error fetching user reports:', error)
     }
   }
 
-  // Refresh data after successful transaction
+  // Refresh data
   const refreshData = () => {
     refetchTotalReports()
-    fetchAllReports()
+    fetchUserReports()
   }
 
   // Auto-refresh after successful transaction
@@ -171,29 +226,31 @@ export function useCitizenActions() {
     }
   }, [isSuccess])
 
-  // Fetch reports on component mount
+  // Initial fetch
   useEffect(() => {
-    if (contractAddress && nextReportId) {
-      fetchAllReports()
+    if (publicClient && contractAddress && address) {
+      fetchUserReports()
     }
-  }, [contractAddress, nextReportId])
+  }, [publicClient, contractAddress, address])
 
   return {
     // Actions
     submitReport,
     getCurrentLocation,
     refreshData,
-    
+
+    // Validation
+    hasUserReportedAtLocation,
+
     // State
     isPending,
     isConfirming,
     isSuccess,
-    error,
-    
+
     // Data
     totalReports: totalReports ? Number(totalReports) : 0,
     userReports,
-    
+
     // Utilities
     coordinateToInt,
     intToCoordinate,

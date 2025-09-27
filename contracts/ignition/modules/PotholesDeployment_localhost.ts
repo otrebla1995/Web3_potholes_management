@@ -24,7 +24,7 @@ export default buildModule("PotholesDeploymentModule", (m) => {
   const CITY_MAX_LAT = m.getParameter("cityMaxLat", 45_131_700); // 45.1317°N
   const CITY_MIN_LNG = m.getParameter("cityMinLng", 7_589_000);  // 7.5890°E
   const CITY_MAX_LNG = m.getParameter("cityMaxLng", 7_759_600);  // 7.7596°E
-  const GRID_PRECISION = m.getParameter("gridPrecision", 100);  // ~10m grid cells (0.0001 degrees) at equator / 7-8m in Torino
+  const GRID_PRECISION = m.getParameter("gridPrecision", 1000);  // ~10m grid cells (0.0001 degrees) at equator / 7-8m in Torino
   
   // Registry owner
   const REGISTRY_OWNER = m.getParameter("registryOwner", deployer);
