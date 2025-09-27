@@ -25,6 +25,7 @@ export function useCitizenActions() {
   const publicClient = usePublicClient()
   const contractAddress = contractAddresses[chainId as keyof typeof contractAddresses]
   const [userReports, setUserReports] = useState<PotholeReport[]>([])
+  const [duplicateReports, setDuplicateReports] = useState<PotholeReport[]>([])
 
   // Write contract hook
   const { writeContract, isPending, data: hash } = useWriteContract()
@@ -148,28 +149,45 @@ export function useCitizenActions() {
     })
   }
 
-  // Fetch user's reports via events (OPTIMIZED)
+  // Fetch user's original reports AND duplicates
   const fetchUserReports = async () => {
     if (!publicClient || !contractAddress || !address) return
 
     try {
-      console.log('⚡ Fetching user reports via events...')
+      console.log('⚡ Fetching user reports and duplicates...')
 
-      // Get reports where user is the reporter
+      // 1. Get original reports where user is the reporter
       const reportedEvents = await publicClient.getLogs({
         address: contractAddress,
         event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
         args: {
-          reporter: address // Filter by user address
+          reporter: address
         },
         fromBlock: BigInt(0),
         toBlock: 'latest'
       })
 
-      console.log(`📋 Found ${reportedEvents.length} reports by user`)
+      console.log(`📋 Found ${reportedEvents.length} original reports by user`)
 
-      // Get status updates for these reports
-      const reportIds = reportedEvents.map(log => Number(log.args.reportId))
+      // 2. Get duplicate reports where user is the duplicate reporter
+      const duplicateEvents = await publicClient.getLogs({
+        address: contractAddress,
+        event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
+        args: {
+          duplicateReporter: address
+        },
+        fromBlock: BigInt(0),
+        toBlock: 'latest'
+      })
+
+      console.log(`📋 Found ${duplicateEvents.length} duplicate reports by user`)
+
+      // 3. Get all report IDs (both original and duplicates)
+      const originalReportIds = reportedEvents.map(log => Number(log.args.reportId))
+      const duplicateReportIds = duplicateEvents.map(log => Number(log.args.originalReportId))
+      const allReportIds = [...new Set([...originalReportIds, ...duplicateReportIds])]
+
+      // 4. Get status updates for all reports
       const statusUpdateEvents = await publicClient.getLogs({
         address: contractAddress,
         event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
@@ -177,17 +195,16 @@ export function useCitizenActions() {
         toBlock: 'latest'
       })
 
-      // Build status map
       const statusMap = new Map<number, number>()
       statusUpdateEvents.forEach(log => {
         const reportId = Number(log.args.reportId)
-        if (reportIds.includes(reportId)) {
+        if (allReportIds.includes(reportId)) {
           statusMap.set(reportId, Number(log.args.newStatus))
         }
       })
 
-      // Get duplicate report events
-      const duplicateEvents = await publicClient.getLogs({
+      // 5. Get ALL duplicate events to build duplicate count map
+      const allDuplicateEvents = await publicClient.getLogs({
         address: contractAddress,
         event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
         fromBlock: BigInt(0),
@@ -195,42 +212,77 @@ export function useCitizenActions() {
       })
 
       const duplicateCountMap = new Map<number, number>()
-      duplicateEvents.forEach(log => {
+      allDuplicateEvents.forEach(log => {
         const reportId = Number(log.args.originalReportId)
         const count = Number(log.args.newDuplicateCount)
-
+        
         const currentCount = duplicateCountMap.get(reportId) ?? 0
         if (count > currentCount) {
           duplicateCountMap.set(reportId, count)
         }
       })
 
-      // Build user reports
-      const reports: PotholeReport[] = []
+      // 6. Build original reports
+      const originalReports: PotholeReport[] = []
       for (const log of reportedEvents) {
         const reportId = Number(log.args.reportId)
         const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
 
-        reports.push({
+        originalReports.push({
           id: reportId,
           latitude: log.args.latitude as bigint,
           longitude: log.args.longitude as bigint,
           ipfsHash: log.args.ipfsHash as string,
-          duplicateCount: duplicateCountMap.get(reportId) ?? 0,
+          duplicateCount: duplicateCountMap.get(reportId) ?? 1,
           reportedAt: Number(block.timestamp),
           reporter: log.args.reporter as string,
           status: statusMap.get(reportId) ?? 0
         })
       }
 
-      setUserReports(reports.sort((a, b) => b.reportedAt - a.reportedAt))
-      console.log(`✅ Fetched ${reports.length} user reports`)
+      // 7. Build duplicate reports (with full report data)
+      const duplicates: PotholeReport[] = []
+      for (const log of duplicateEvents) {
+        const reportId = Number(log.args.originalReportId)
+        
+        // Get the original report block for timestamp
+        const originalReportEvent = await publicClient.getLogs({
+          address: contractAddress,
+          event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
+          args: {
+            reportId: BigInt(reportId)
+          },
+          fromBlock: BigInt(0),
+          toBlock: 'latest'
+        })
+
+        if (originalReportEvent.length > 0) {
+          const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
+          
+          duplicates.push({
+            id: reportId,
+            latitude: log.args.latitude as bigint,
+            longitude: log.args.longitude as bigint,
+            ipfsHash: log.args.ipfsHash as string,
+            duplicateCount: duplicateCountMap.get(reportId) ?? 1,
+            reportedAt: Number(block.timestamp), // When user reported the duplicate
+            reporter: originalReportEvent[0].args.reporter as string, // Original reporter
+            status: statusMap.get(reportId) ?? 0
+          })
+        }
+      }
+
+      setUserReports(originalReports.sort((a, b) => b.reportedAt - a.reportedAt))
+      setDuplicateReports(duplicates.sort((a, b) => b.reportedAt - a.reportedAt))
+      
+      console.log(`✅ Fetched ${originalReports.length} original + ${duplicates.length} duplicate reports`)
 
     } catch (error) {
       console.error('Error fetching user reports:', error)
+      toast.error('Failed to fetch reports')
     }
   }
-
+  
   // Refresh data
   const refreshData = () => {
     refetchTotalReports()
@@ -269,6 +321,7 @@ export function useCitizenActions() {
     // Data
     totalReports: totalReports ? Number(totalReports) : 0,
     userReports,
+    duplicateReports,
 
     // Utilities
     coordinateToInt,
