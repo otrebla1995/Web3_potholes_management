@@ -10,6 +10,12 @@ import { useCitizenActions } from '@/hooks/useCitizenActions'
 import { useGaslessTransactions } from '@/hooks/useGaslessTransactions'
 import { DuplicateAlert } from '@/components/reports/DuplicateAlert'
 import { MapPin, Navigation, Loader2, Zap, Wallet, AlertCircle } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const MapLocationPicker = dynamic(
+  () => import('@/components/map/MapLocationPicker').then(m => m.MapLocationPicker),
+  { ssr: false }
+)
 import { usePublicClient } from 'wagmi'
 import { parseAbiItem } from 'viem'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
@@ -303,6 +309,16 @@ export function PotholeReportForm() {
             />
           </div>
         </div>
+
+        {/* Map Picker */}
+        <MapLocationPicker
+          latitude={latitude}
+          longitude={longitude}
+          onChange={(lat, lng) => {
+            setLatitude(lat.toFixed(6))
+            setLongitude(lng.toFixed(6))
+          }}
+        />
 
         {isCheckingDuplicate && (
           <div className="flex items-center space-x-2 text-sm text-slate-500">
