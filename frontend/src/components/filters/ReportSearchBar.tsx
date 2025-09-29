@@ -21,6 +21,12 @@ export function ReportSearchBar({
 
   useEffect(() => {
     if (searchQuery.trim()) {
+      // If input looks like a selected value (e.g., "#123"), keep dropdown closed
+      if (/^#\d+$/.test(searchQuery)) {
+        setShowDropdown(false)
+        return
+      }
+
       // Remove # from search query for filtering
       const cleanQuery = searchQuery.replace('#', '')
       const filtered = reports.filter(report =>
@@ -46,9 +52,18 @@ export function ReportSearchBar({
     onReportSelect(null)
   }
 
-  // Clear selection when reports prop changes (e.g., tab change)
+  // Maintain selection across report list changes; clear only if selected report disappears
   useEffect(() => {
-    handleClear()
+    if (!searchQuery) return
+    const match = /^#(\d+)$/.exec(searchQuery)
+    if (!match) return
+    const selectedId = Number(match[1])
+    const exists = reports.some(r => r.id === selectedId)
+    if (!exists) {
+      handleClear()
+    } else {
+      setShowDropdown(false)
+    }
   }, [reports])
 
   const getStatusColor = (status: number) => {
@@ -81,7 +96,7 @@ export function ReportSearchBar({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          onFocus={() => searchQuery && setShowDropdown(true)}
+          onFocus={() => searchQuery && !/^#\d+$/.test(searchQuery) && setShowDropdown(true)}
           placeholder={placeholder}
           className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
         />

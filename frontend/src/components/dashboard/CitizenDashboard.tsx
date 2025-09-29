@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense, lazy } from 'react'
+import { useState, useMemo, Suspense, lazy } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Users, Plus, History, Activity, MapPin } from 'lucide-react'
@@ -34,13 +34,17 @@ export function CitizenDashboard() {
   // Fetch all reports for "Show All" mode
   const { allReports, isLoading: isLoadingAllReports } = useAllReports()
 
-  // Combine user reports and duplicates for map
-  const myReports = [...userReports, ...duplicateReports].map(r => ({
-    ...r,
-    priority: 0,
-  }))
+  // Combine user reports and duplicates for map (memoized to keep stable reference)
+  const myReports = useMemo(() => (
+    [...userReports, ...duplicateReports].map(r => ({
+      ...r,
+      priority: 0,
+    }))
+  ), [userReports, duplicateReports])
 
-  const reportsToShow = showAllReports ? allReports : myReports
+  const reportsToShow = useMemo(() => (
+    showAllReports ? allReports : myReports
+  ), [showAllReports, allReports, myReports])
 
   // Map filters hook
   const {
@@ -91,7 +95,7 @@ export function CitizenDashboard() {
     }
   }
 
-  const statusDistribution = getStatusDistribution()
+  const statusDistribution = useMemo(() => getStatusDistribution(), [myReports])
 
   // Handle report selection from search
   const handleReportSelect = (report: PotholeReport | null) => {
