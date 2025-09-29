@@ -105,55 +105,44 @@ export function CitizenDashboard() {
 
   return (
     <div className="container mx-auto py-8 px-4 space-y-8">
-      {/* Header */}
-      <div className="text-center">
-        <div className="flex items-center justify-center space-x-2 mb-4">
-          <Users className="h-8 w-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-slate-900">Citizen Portal</h1>
+      {/* Header (aligned with MunicipalDashboard) */}
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center space-x-3">
+            <Users className="h-8 w-8 text-blue-600" />
+            <span>Citizen Portal</span>
+          </h1>
+          <p className="text-slate-600 mt-2">
+            Report potholes, earn rewards, and help improve your community
+          </p>
         </div>
-        <p className="text-lg text-slate-600">
-          Report potholes, earn rewards, and help improve your community
-        </p>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            const isActive = activeTab === tab.id
-
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative flex flex-col items-start p-4 rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center space-x-2 mb-1">
-                  <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-blue-600'}`} />
-                  <span className="font-semibold">{tab.label}</span>
-                  {tab.badge !== undefined && tab.badge > 0 && (
-                    <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                      isActive 
-                        ? 'bg-white/20 text-white' 
-                        : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {tab.badge}
-                    </span>
-                  )}
-                </div>
-                <p className={`text-xs ${
-                  isActive ? 'text-blue-100' : 'text-slate-500'
-                }`}>
-                  {tab.description}
-                </p>
-              </button>
-            )
-          })}
+      {/* Tabs Navigation (underline style like MunicipalDashboard) */}
+      <div className="mb-2">
+        <div className="border-b border-slate-200">
+          <nav className="-mb-px flex space-x-8">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm
+                    transition-colors duration-200
+                    ${isActive
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}
+                  `}
+                >
+                  <Icon className={`mr-2 h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              )
+            })}
+          </nav>
         </div>
       </div>
 
