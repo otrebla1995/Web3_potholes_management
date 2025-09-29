@@ -74,3 +74,57 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* Leaflet Map Styles */
+.leaflet-container {
+  font-family: inherit;
+}
+
+.custom-map-marker {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.custom-map-marker:hover {
+  transform: scale(1.1);
+  z-index: 1000 !important;
+}
+
+/* Leaflet Popup Customization */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.2);
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.2);
+}
+
+/* Make sure Leaflet controls are visible */
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+}
+
+.leaflet-control-zoom a {
+  background-color: white !important;
+  color: #334155 !important;
+  border: 1px solid #e2e8f0;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #f8fafc !important;
+}
+
+/* Ensure map renders properly */
+.leaflet-container {
+  z-index: 0;
+}

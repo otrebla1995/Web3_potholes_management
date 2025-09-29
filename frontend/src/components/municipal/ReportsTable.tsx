@@ -17,8 +17,9 @@ import {
   Users,
   AlertTriangle
 } from 'lucide-react'
-import { PotholeReport, PotholeStatus, statusLabels, statusColors } from '@/hooks/useMunicipalActions'
+import { PotholeStatus, statusLabels, statusColors } from '@/hooks/useMunicipalActions'
 import { RejectReportModal } from './RejectReportModal'
+import { PotholeReport } from '@/types/report'
 
 interface EnhancedReportsTableProps {
   reports: PotholeReport[]

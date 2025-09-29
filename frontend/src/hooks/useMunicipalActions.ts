@@ -7,18 +7,7 @@ import { contractAddresses } from '@/lib/config'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { toast } from 'react-hot-toast'
 import { parseAbiItem } from 'viem'
-
-export interface PotholeReport {
-  id: number
-  latitude: bigint
-  longitude: bigint
-  ipfsHash: string
-  duplicateCount: number
-  reportedAt: number
-  reporter: string
-  status: number
-  priority: number
-}
+import { PotholeReport } from '@/types/report'
 
 export type SortOption = 'date-desc' | 'date-asc' | 'priority-desc' | 'priority-asc' | 'duplicates-desc'
 
