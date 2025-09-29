@@ -128,3 +128,15 @@ body {
 .leaflet-container {
   z-index: 0;
 }
+
+/* Animated dashed border for city bounds polygon */
+@keyframes dash-move {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+.city-bounds-animated {
+  stroke-linecap: round;
+  animation: dash-move 1.8s linear infinite;
+}

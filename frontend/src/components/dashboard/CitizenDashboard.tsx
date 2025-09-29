@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo, Suspense, lazy } from 'react'
+import { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Users, Plus, History, Activity, MapPin, Map } from 'lucide-react'
@@ -15,8 +16,20 @@ import { ReportSearchBar } from '@/components/filters/ReportSearchBar'
 import { PotholeReport } from '@/types/report'
 import { useCity } from '@/hooks/useCity'
 
-// Lazy load the map component
-const ReportsMap = lazy(() => import('@/components/map/ReportsMap').then(mod => ({ default: mod.ReportsMap })))
+// Client-only dynamic import for the map to avoid SSR/async chunk issues
+const ReportsMap = dynamic(() => import('@/components/map/ReportsMap').then(mod => mod.ReportsMap), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardContent className="p-8 text-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-slate-600">Loading map...</p>
+        </div>
+      </CardContent>
+    </Card>
+  ),
+})
 
 type ActiveTab = 'overview' | 'report' | 'history' | 'map'
 
@@ -383,21 +396,10 @@ export function CitizenDashboard() {
                 </CardContent>
               </Card>
             ) : (
-              <Suspense fallback={
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                      <p className="text-slate-600">Loading map...</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              }>
-                <ReportsMap 
-                  reports={displayedMapReports} 
-                  userRole="citizen"
-                />
-              </Suspense>
+              <ReportsMap 
+                reports={displayedMapReports} 
+                userRole="citizen"
+              />
             )}
           </div>
         )}

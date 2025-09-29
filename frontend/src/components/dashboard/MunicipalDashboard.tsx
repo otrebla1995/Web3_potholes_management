@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, Suspense, lazy } from 'react'
+import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -13,8 +14,20 @@ import { ReportSearchBar } from '../filters/ReportSearchBar'
 import { PotholeReport } from '@/types/report'
 import { useCity } from '@/hooks/useCity'
 
-// Lazy load the map component
-const ReportsMap = lazy(() => import('@/components/map/ReportsMap').then(mod => ({ default: mod.ReportsMap })))
+// Client-only dynamic import for map
+const ReportsMap = dynamic(() => import('@/components/map/ReportsMap').then(mod => mod.ReportsMap), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardContent className="p-8 text-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-slate-600">Loading map...</p>
+        </div>
+      </CardContent>
+    </Card>
+  ),
+})
 
 type ActiveTab = 'overview' | 'reports' | 'analytics' | 'map'
 type SortOption = 'date-desc' | 'date-asc' | 'priority-desc' | 'priority-asc' | 'duplicates-desc'
@@ -486,22 +499,11 @@ export function MunicipalDashboard() {
                 </CardContent>
               </Card>
             ) : (
-              <Suspense fallback={
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                      <p className="text-slate-600">Loading map...</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              }>
-                <ReportsMap
-                  reports={displayedMapReports}
-                  userRole="municipal"
-                  onStatusUpdate={handleMapStatusUpdate}
-                />
-              </Suspense>
+              <ReportsMap
+                reports={displayedMapReports}
+                userRole="municipal"
+                onStatusUpdate={handleMapStatusUpdate}
+              />
             )}
           </div>
         )}

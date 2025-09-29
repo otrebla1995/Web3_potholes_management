@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
+import type { CityBounds } from '@/hooks/useCity'
 let L: any
 let LeafletReady = false
 if (typeof window !== 'undefined') {
@@ -23,6 +24,7 @@ const RL = {
   TileLayer: LeafletReady ? require('react-leaflet').TileLayer : () => null,
   Marker: LeafletReady ? require('react-leaflet').Marker : () => null,
   useMapEvents: LeafletReady ? require('react-leaflet').useMapEvents : (() => () => null),
+  Polygon: LeafletReady ? require('react-leaflet').Polygon : () => null,
 }
 
 // Fix for default marker icons in Next.js
@@ -40,6 +42,8 @@ interface MapLocationPickerProps {
   center?: [number, number]
   zoom?: number
   heightClassName?: string
+  bounds?: CityBounds | null
+  cityName?: string
 }
 
 function ClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
@@ -58,6 +62,8 @@ export function MapLocationPicker({
   center = [45.4642, 9.19], // Milan default
   zoom = 13,
   heightClassName = 'h-80',
+  bounds,
+  cityName,
 }: MapLocationPickerProps) {
   const hasSelection = useMemo(() => !!latitude && !!longitude, [latitude, longitude])
 
@@ -91,6 +97,26 @@ export function MapLocationPicker({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
+        {/* City bounds polygon with animated stroke */}
+        {bounds && (
+          <RL.Polygon
+            positions={[
+              [bounds.minLat, bounds.minLng],
+              [bounds.minLat, bounds.maxLng],
+              [bounds.maxLat, bounds.maxLng],
+              [bounds.maxLat, bounds.minLng],
+            ] as [number, number][]}
+            pathOptions={{
+              color: '#2563eb', // blue-600
+              weight: 2,
+              dashArray: '8 10',
+              fillOpacity: 0.06,
+              fillColor: '#3b82f6', // blue-500
+              className: 'city-bounds-animated',
+            }}
+          />
+        )}
+
         <ClickHandler onPick={(lat, lng) => onChange(lat, lng)} />
 
         {selectedPosition && (
@@ -107,6 +133,14 @@ export function MapLocationPicker({
           />
         )}
       </RL.MapContainer>
+
+      {/* Bounds label */}
+      {bounds && (
+        <div className="absolute left-3 top-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md shadow text-xs text-slate-700 border border-slate-200 animate-fadeIn">
+          <span className="mr-1 inline-flex h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.8)]" />
+          City bounds{cityName ? `: ${cityName}` : ''}
+        </div>
+      )}
 
       <div className="absolute left-3 bottom-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md shadow text-xs text-slate-700 border border-slate-200">
         {selectedPosition ? (

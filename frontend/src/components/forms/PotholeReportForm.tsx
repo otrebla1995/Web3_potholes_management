@@ -286,6 +286,8 @@ export function PotholeReportForm() {
             setLongitude(clampedLng.toFixed(6))
           }}
           center={center ?? [45.4642, 9.19]}
+          bounds={bounds}
+          cityName={cityName}
         />
 
         {cityName && bounds && (
