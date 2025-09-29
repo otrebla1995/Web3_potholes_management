@@ -17,7 +17,10 @@ export interface PotholeReport {
   reportedAt: number
   reporter: string
   status: number
+  priority: number
 }
+
+export type SortOption = 'date-desc' | 'date-asc' | 'priority-desc' | 'priority-asc' | 'duplicates-desc'
 
 export enum PotholeStatus {
   Reported = 0,
@@ -49,6 +52,7 @@ export function useMunicipalActions() {
   const [filteredReports, setFilteredReports] = useState<PotholeReport[]>([])
   const [statusFilter, setStatusFilter] = useState<PotholeStatus | 'all'>('all')
   const [isLoadingReports, setIsLoadingReports] = useState(false)
+  const [sortOption, setSortOption] = useState<SortOption>('priority-desc')
 
   // Write contract hook
   const { writeContract, isPending, data: hash } = useWriteContract()
@@ -112,7 +116,56 @@ export function useMunicipalActions() {
   }
 
   const rejectReport = async (reportId: number, reason: string) => {
-    await updateStatus(reportId, PotholeStatus.Rejected, reason)
+    if (!contractAddress || !reason.trim()) return
+
+    try {
+      await writeContract({
+        address: contractAddress,
+        abi: PotholesRegistryABI.abi,
+        functionName: 'rejectReport',
+        args: [reportId, reason],
+      })
+    } catch (error: any) {
+      console.error('Error rejecting report:', error)
+    }
+  }
+
+  // Added priority calculation
+  const calculatePriority = (report: {
+    duplicateCount: number
+    reportedAt: number
+    status: number
+  }): number => {
+    let score = 0
+
+    // Duplicates add 30 points each
+    score += report.duplicateCount * 30
+
+    // Age adds up to 40 points for old reports
+    if (report.status === PotholeStatus.Reported) {
+      const daysOld = (Date.now() / 1000 - report.reportedAt) / (60 * 60 * 24)
+      score += Math.min(daysOld * 2, 40)
+    }
+
+    // Status weights
+    if (report.status === PotholeStatus.Reported) score += 50
+    if (report.status === PotholeStatus.InProgress) score += 30
+
+    return Math.round(score)
+  }
+
+  // Added sorting function
+  const sortReports = (reportsToSort: PotholeReport[]): PotholeReport[] => {
+    const sorted = [...reportsToSort]
+
+    switch (sortOption) {
+      case 'date-desc': return sorted.sort((a, b) => b.reportedAt - a.reportedAt)
+      case 'date-asc': return sorted.sort((a, b) => a.reportedAt - b.reportedAt)
+      case 'priority-desc': return sorted.sort((a, b) => b.priority - a.priority)
+      case 'priority-asc': return sorted.sort((a, b) => a.priority - b.priority)
+      case 'duplicates-desc': return sorted.sort((a, b) => b.duplicateCount - a.duplicateCount)
+      default: return sorted
+    }
   }
 
   // OPTIMIZED: Fetch reports using events
@@ -190,23 +243,29 @@ export function useMunicipalActions() {
         // Get duplicate count
         const duplicateCount = duplicateCountMap.get(reportId) ?? 0
 
-        fetchedReports.push({
+        const report = {
           id: reportId,
-          latitude,
-          longitude,
+          reporter,
           ipfsHash,
           duplicateCount,
+          latitude,
+          longitude,
           reportedAt,
-          reporter,
-          status
-        })
+          status,
+          priority: 0 // Placeholder, will calculate next
+        }
+
+        // Calculate priority
+        report.priority = calculatePriority(report)
+
+        fetchedReports.push(report)
       }
 
       console.log(`Successfully fetched ${fetchedReports.length} reports via events`)
 
       // Sort by newest first
-      const sortedReports = fetchedReports.sort((a, b) => b.reportedAt - a.reportedAt)
-      setReports(sortedReports)
+      // const sortedReports = fetchedReports.sort((a, b) => b.reportedAt - a.reportedAt)
+      setReports(fetchedReports)
 
     } catch (error) {
       console.error('Error fetching reports via events:', error)
@@ -216,14 +275,18 @@ export function useMunicipalActions() {
     }
   }
 
-  // Filter reports by status
+  // Filter and sort reports
   useEffect(() => {
-    if (statusFilter === 'all') {
-      setFilteredReports(reports)
-    } else {
-      setFilteredReports(reports.filter(report => report.status === statusFilter))
+    let filtered = reports
+
+    if (statusFilter !== 'all') {
+      filtered = reports.filter(report => report.status === statusFilter)
     }
-  }, [reports, statusFilter])
+
+    const sorted = sortReports(filtered)
+    setFilteredReports(sorted)
+
+  }, [reports, statusFilter, sortOption])
 
   // Refresh data
   const refreshData = () => {
@@ -269,6 +332,10 @@ export function useMunicipalActions() {
     isConfirming,
     isSuccess,
     isLoadingReports,
+
+    // Sorting
+    sortOption,
+    setSortOption,
 
     // Data
     reports: filteredReports,
