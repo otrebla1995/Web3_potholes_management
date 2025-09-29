@@ -518,7 +518,7 @@ contract PotholesRegistryTest is Test {
 
         // Mark as rejected
         vm.prank(municipal1);
-        registry.updateReportStatus(reportId1, PotholesRegistry.PotholeStatus.Rejected);
+        registry.rejectReport(reportId1, "Completed location - no longer needs new reports");
 
         // Submit new report to same location (should create new report)
         vm.prank(citizen2);
@@ -576,7 +576,7 @@ contract PotholesRegistryTest is Test {
 
         // Mark as rejected
         vm.prank(municipal1);
-        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.Rejected);
+        registry.rejectReport(reportId, "Cannot update - already rejected");
 
         // Try to update rejected pothole (should revert)
         vm.prank(municipal1);
@@ -797,6 +797,313 @@ contract PotholesRegistryTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                        REPORT REJECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_rejectReport() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        string memory reason = "Invalid pothole report - no visible damage";
+
+        // Reject report
+        vm.prank(municipal1);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeRejected(reportId, municipal1, reason);
+
+        vm.expectEmit(true, false, false, true);
+        emit PotholesRegistry.PotholeStatusUpdated(
+            reportId,
+            PotholesRegistry.PotholeStatus.Reported,
+            PotholesRegistry.PotholeStatus.Rejected,
+            municipal1
+        );
+
+        registry.rejectReport(reportId, reason);
+
+        // Verify rejection
+        PotholesRegistry.PotholeReport memory report = registry.getReport(reportId);
+        assertEq(uint8(report.status), uint8(PotholeStatus.Rejected));
+
+        // Verify no rewards were given
+        assertEq(token.balanceOf(citizen1), 0);
+    }
+
+    function test_rejectReport_emptyReason() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Try to reject with empty reason
+        vm.prank(municipal1);
+        vm.expectRevert("Rejection reason required");
+        registry.rejectReport(reportId, "");
+    }
+
+    function test_rejectReport_notMunicipalAuthority() public {
+        // Setup
+        vm.prank(owner);
+        registry.addCitizen(citizen1);
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Try to reject without authority
+        vm.prank(citizen2);
+        vm.expectRevert("Not authorized municipal authority");
+        registry.rejectReport(reportId, "Some reason");
+    }
+
+    function test_rejectReport_invalidReportId() public {
+        vm.prank(owner);
+        registry.addMunicipalAuthority(municipal1);
+
+        vm.prank(municipal1);
+        vm.expectRevert("Invalid report ID");
+        registry.rejectReport(999, "Some reason");
+    }
+
+    function test_rejectReport_alreadyRejected() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create and reject report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        vm.prank(municipal1);
+        registry.rejectReport(reportId, "First rejection");
+
+        // Try to reject again
+        vm.prank(municipal1);
+        vm.expectRevert("Status unchanged");
+        registry.rejectReport(reportId, "Second rejection");
+    }
+
+    function test_rejectReport_alreadyCompleted() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create and complete report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.Completed);
+
+        // Try to reject completed report
+        vm.prank(municipal1);
+        vm.expectRevert("Cannot update completed pothole");
+        registry.rejectReport(reportId, "Trying to reject completed");
+    }
+
+    function test_rejectReport_fromInProgress() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report and set to in progress
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        vm.prank(municipal1);
+        registry.updateReportStatus(reportId, PotholesRegistry.PotholeStatus.InProgress);
+
+        // Verify citizen got progress reward
+        assertEq(token.balanceOf(citizen1), ORIGINAL_REPORT_REWARD);
+
+        // Reject the in-progress report
+        vm.prank(municipal1);
+        registry.rejectReport(reportId, "Work cannot be completed");
+
+        // Verify rejection
+        PotholesRegistry.PotholeReport memory report = registry.getReport(reportId);
+        assertEq(uint8(report.status), uint8(PotholeStatus.Rejected));
+
+        // Citizen should keep the progress reward (no clawback)
+        assertEq(token.balanceOf(citizen1), ORIGINAL_REPORT_REWARD);
+    }
+
+    function test_rejectReport_withDuplicates() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addCitizen(citizen3);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create original report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Add duplicates
+        vm.prank(citizen2);
+        registry.submitReport(VALID_LAT, VALID_LNG, "QmDuplicate1");
+
+        vm.prank(citizen3);
+        registry.submitReport(VALID_LAT, VALID_LNG, "QmDuplicate2");
+
+        // Verify duplicates were recorded
+        assertEq(registry.getReport(reportId).duplicateCount, 2);
+
+        // Reject the report
+        vm.prank(municipal1);
+        registry.rejectReport(reportId, "Location inspection shows no pothole");
+
+        // Verify rejection
+        PotholesRegistry.PotholeReport memory report = registry.getReport(reportId);
+        assertEq(uint8(report.status), uint8(PotholeStatus.Rejected));
+        assertEq(report.duplicateCount, 2); // Duplicate count should remain
+
+        // No one should get rewards
+        assertEq(token.balanceOf(citizen1), 0);
+        assertEq(token.balanceOf(citizen2), 0);
+        assertEq(token.balanceOf(citizen3), 0);
+    }
+
+    function test_submitReportAfterRejection() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create and reject report
+        vm.prank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        vm.prank(municipal1);
+        registry.rejectReport(reportId1, "False alarm");
+
+        // Submit new report at same location after rejection
+        vm.prank(citizen2);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeReported(2, citizen2, VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        uint256 reportId2 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
+
+        // Should create new report, not duplicate
+        assertEq(reportId2, 2);
+        assertEq(registry.totalReports(), 2);
+
+        // Verify new report has correct status
+        PotholesRegistry.PotholeReport memory newReport = registry.getReport(reportId2);
+        assertEq(uint8(newReport.status), uint8(PotholeStatus.Reported));
+        assertEq(newReport.duplicateCount, 0);
+        assertEq(newReport.reporter, citizen2);
+    }
+
+    function test_batchRejectReports() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create multiple reports
+        vm.startPrank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+        uint256 reportId2 = registry.submitReport(VALID_LAT_2, VALID_LNG_2, IPFS_HASH_2);
+        vm.stopPrank();
+
+        // Reject both reports individually (contract doesn't have batch reject)
+        vm.startPrank(municipal1);
+        registry.rejectReport(reportId1, "Location 1 - no pothole found");
+        registry.rejectReport(reportId2, "Location 2 - minor crack only");
+        vm.stopPrank();
+
+        // Verify both reports rejected
+        assertEq(uint8(registry.getReport(reportId1).status), uint8(PotholeStatus.Rejected));
+        assertEq(uint8(registry.getReport(reportId2).status), uint8(PotholeStatus.Rejected));
+
+        // No rewards distributed
+        assertEq(token.balanceOf(citizen1), 0);
+    }
+
+    function test_rejectReport_longReason() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addMunicipalAuthority(municipal1);
+        vm.stopPrank();
+
+        // Create report
+        vm.prank(citizen1);
+        uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+
+        // Long rejection reason
+        string memory longReason = "After thorough inspection by our municipal engineering team, we have determined that the reported location does not contain a pothole that meets our criteria for repair. The surface imperfection appears to be minor wear and does not pose a safety hazard to vehicles or pedestrians. We appreciate the citizen's vigilance in reporting potential issues.";
+
+        // Should work with long reason
+        vm.prank(municipal1);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeRejected(reportId, municipal1, longReason);
+
+        registry.rejectReport(reportId, longReason);
+
+        // Verify rejection
+        PotholesRegistry.PotholeReport memory report = registry.getReport(reportId);
+        assertEq(uint8(report.status), uint8(PotholeStatus.Rejected));
+    }
+
+    function test_rejectReport_differentMunicipals() public {
+        // Setup
+        vm.startPrank(owner);
+        registry.addCitizen(citizen1);
+        registry.addCitizen(citizen2);
+        registry.addMunicipalAuthority(municipal1);
+        registry.addMunicipalAuthority(municipal2);
+        vm.stopPrank();
+
+        // Create two reports
+        vm.startPrank(citizen1);
+        uint256 reportId1 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
+        vm.stopPrank();
+
+        vm.prank(citizen2);
+        uint256 reportId2 = registry.submitReport(VALID_LAT_2, VALID_LNG_2, IPFS_HASH_2);
+
+        // Different municipals reject different reports
+        vm.prank(municipal1);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeRejected(reportId1, municipal1, "Municipal1 rejection");
+        registry.rejectReport(reportId1, "Municipal1 rejection");
+
+        vm.prank(municipal2);
+        vm.expectEmit(true, true, false, true);
+        emit PotholesRegistry.PotholeRejected(reportId2, municipal2, "Municipal2 rejection");
+        registry.rejectReport(reportId2, "Municipal2 rejection");
+
+        // Verify both rejections
+        assertEq(uint8(registry.getReport(reportId1).status), uint8(PotholeStatus.Rejected));
+        assertEq(uint8(registry.getReport(reportId2).status), uint8(PotholeStatus.Rejected));
+    }
+
+    /*//////////////////////////////////////////////////////////////
                            INTEGRATION TESTS
     //////////////////////////////////////////////////////////////*/
 
@@ -896,7 +1203,7 @@ contract PotholesRegistryTest is Test {
         uint256 reportId3 = registry.submitReport(45_700_000, 7_700_000, "QmRejected");
 
         vm.prank(municipal1);
-        registry.updateReportStatus(reportId3, PotholesRegistry.PotholeStatus.Rejected);
+        registry.rejectReport(reportId3, "Invalid report - no pothole found");
         assertEq(token.balanceOf(citizen3), 0); // No rewards for rejected reports
     }
 
