@@ -1,252 +1,398 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
+import { Textarea } from '@/components/ui/Textarea'
 import { Badge } from '@/components/ui/Badge'
 import { useCitizenActions } from '@/hooks/useCitizenActions'
 import { useGaslessTransactions } from '@/hooks/useGaslessTransactions'
-import { MapPin, Camera, Loader2, Navigation, Zap } from 'lucide-react'
-import { toast } from 'react-hot-toast'
+import { DuplicateAlert } from '@/components/reports/DuplicateAlert'
+import { MapPin, Navigation, Loader2, Zap, Wallet, AlertCircle } from 'lucide-react'
+import { usePublicClient } from 'wagmi'
+import { parseAbiItem } from 'viem'
+import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
+import { Alert, AlertDescription } from '@/components/ui/Alert'
 
 export function PotholeReportForm() {
-  const [latitude, setLatitude] = useState('')
-  const [longitude, setLongitude] = useState('')
-  const [description, setDescription] = useState('')
-  const [isGettingLocation, setIsGettingLocation] = useState(false)
-  const [useGasless, setUseGasless] = useState(true) // Default to gasless
-  
-  // Regular transaction hook
-  const {
-    submitReport,
-    getCurrentLocation,
-    hasUserReportedAtLocation,
-    isPending,
+  const { 
+    submitReport, 
+    getCurrentLocation, 
+    isPending, 
     isConfirming,
+    coordinateToInt,
+    hasUserReportedAtLocation,
+    refreshData
   } = useCitizenActions()
 
-  // Gasless transaction hook
   const {
     submitReportGasless,
     isSubmitting: isGaslessSubmitting,
-    isGaslessAvailable,
+    isGaslessAvailable
   } = useGaslessTransactions()
 
+  const publicClient = usePublicClient()
+  const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`
+
+  const [latitude, setLatitude] = useState('')
+  const [longitude, setLongitude] = useState('')
+  const [description, setDescription] = useState('')
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false)
+  const [isDuplicate, setIsDuplicate] = useState(false)
+  const [existingReportId, setExistingReportId] = useState<number>()
+  const [duplicateCount, setDuplicateCount] = useState(1)
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false)
+  const [alreadyReported, setAlreadyReported] = useState(false)
+  const [submissionMethod, setSubmissionMethod] = useState<'normal' | 'gasless'>('normal')
+
+  // Check for duplicates and if user already reported
+  useEffect(() => {
+    const checkLocation = async () => {
+      if (!latitude || !longitude || !publicClient || !contractAddress) {
+        setIsDuplicate(false)
+        setAlreadyReported(false)
+        return
+      }
+
+      const lat = parseFloat(latitude)
+      const lng = parseFloat(longitude)
+
+      if (isNaN(lat) || isNaN(lng)) {
+        setIsDuplicate(false)
+        setAlreadyReported(false)
+        return
+      }
+
+      setIsCheckingDuplicate(true)
+
+      try {
+        // Check if user already reported at this location
+        const userAlreadyReported = hasUserReportedAtLocation(lat, lng)
+        setAlreadyReported(userAlreadyReported)
+
+        if (userAlreadyReported) {
+          setIsCheckingDuplicate(false)
+          return
+        }
+
+        // Check for existing reports at this location
+        const latInt = coordinateToInt(lat)
+        const lngInt = coordinateToInt(lng)
+
+        const reportedEvents = await publicClient.getLogs({
+          address: contractAddress,
+          event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
+          fromBlock: BigInt(0),
+          toBlock: 'latest'
+        })
+
+        const GRID_PRECISION = 1000
+        const gridLat = Number(latInt) / GRID_PRECISION
+        const gridLng = Number(lngInt) / GRID_PRECISION
+
+        const matchingReport = reportedEvents.find(log => {
+          const reportLat = Number(log.args.latitude) / GRID_PRECISION
+          const reportLng = Number(log.args.longitude) / GRID_PRECISION
+          return Math.floor(reportLat) === Math.floor(gridLat) && 
+                 Math.floor(reportLng) === Math.floor(gridLng)
+        })
+
+        if (matchingReport) {
+          const reportId = Number(matchingReport.args.reportId)
+          
+          // Check status
+          const statusEvents = await publicClient.getLogs({
+            address: contractAddress,
+            event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
+            args: { reportId: BigInt(reportId) },
+            fromBlock: BigInt(0),
+            toBlock: 'latest'
+          })
+
+          const latestStatus = statusEvents.length > 0 
+            ? Number(statusEvents[statusEvents.length - 1].args.newStatus)
+            : 0
+
+          if (latestStatus === 0) {
+            const duplicateEvents = await publicClient.getLogs({
+              address: contractAddress,
+              event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
+              args: { originalReportId: BigInt(reportId) },
+              fromBlock: BigInt(0),
+              toBlock: 'latest'
+            })
+
+            const count = duplicateEvents.length > 0
+              ? Number(duplicateEvents[duplicateEvents.length - 1].args.newDuplicateCount)
+              : 1
+
+            setIsDuplicate(true)
+            setExistingReportId(reportId)
+            setDuplicateCount(count)
+          } else {
+            setIsDuplicate(false)
+          }
+        } else {
+          setIsDuplicate(false)
+        }
+      } catch (error) {
+        console.error('Error checking location:', error)
+        setIsDuplicate(false)
+        setAlreadyReported(false)
+      } finally {
+        setIsCheckingDuplicate(false)
+      }
+    }
+
+    const timer = setTimeout(checkLocation, 500)
+    return () => clearTimeout(timer)
+  }, [latitude, longitude, publicClient, contractAddress, coordinateToInt, hasUserReportedAtLocation])
+
   const handleGetLocation = async () => {
-    setIsGettingLocation(true)
+    setIsLoadingLocation(true)
     try {
       const location = await getCurrentLocation()
-      setLatitude(location.latitude.toString())
-      setLongitude(location.longitude.toString())
-      toast.success('Location captured!')
-    } catch (error: any) {
+      setLatitude(location.latitude.toFixed(6))
+      setLongitude(location.longitude.toFixed(6))
+    } catch (error) {
       console.error('Error getting location:', error)
-      toast.error('Failed to get location. Please enter manually.')
     } finally {
-      setIsGettingLocation(false)
+      setIsLoadingLocation(false)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!latitude || !longitude || !description) {
-      toast.error('Please fill all fields')
-      return
-    }
-
     const lat = parseFloat(latitude)
     const lng = parseFloat(longitude)
 
     if (isNaN(lat) || isNaN(lng)) {
-      toast.error('Please enter valid coordinates')
+      alert('Please enter valid coordinates')
       return
     }
 
-    // Check if user has already reported at this location
-    if (hasUserReportedAtLocation(lat, lng)) {
-      toast.error('⚠️ You have already reported a pothole at this location. Please check your previous reports.')
+    if (!description.trim()) {
+      alert('Please enter a description')
       return
     }
 
-    console.log('🚀 Submitting report:', {
-      method: useGasless ? 'gasless' : 'regular',
-      lat, lng, description
-    })
-
-    let success = false
-
-    // Choose submission method
-    if (useGasless && isGaslessAvailable) {
-      const txHash = await submitReportGasless(lat, lng, description)
-      success = !!txHash
-    } else {
-      await submitReport(lat, lng, description)
-      // For regular transactions, success is handled by the hook
-      success = true
+    if (alreadyReported) {
+      alert('You have already reported a pothole at this location')
+      return
     }
 
-    // Reset form on success
-    if (success) {
-      setLatitude('')
-      setLongitude('')
-      setDescription('')
+    try {
+      if (submissionMethod === 'gasless' && isGaslessAvailable) {
+        const txHash = await submitReportGasless(lat, lng, description)
+        if (txHash) {
+          // Success handled in hook
+          setLatitude('')
+          setLongitude('')
+          setDescription('')
+          setIsDuplicate(false)
+          setTimeout(() => refreshData(), 2000)
+        }
+      } else {
+        await submitReport(lat, lng, description)
+        // Clear form after submission
+        setLatitude('')
+        setLongitude('')
+        setDescription('')
+        setIsDuplicate(false)
+      }
+    } catch (error) {
+      console.error('Submission error:', error)
     }
   }
 
-  const isLoading = isPending || isConfirming || isGaslessSubmitting
+  const isSubmitting = isPending || isConfirming || isGaslessSubmitting
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <MapPin className="h-5 w-5 text-orange-500" />
-          <span>Report New Pothole</span>
-        </CardTitle>
-        <CardDescription>
-          Help improve your community by reporting road issues
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Location Section */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-700">Location</h3>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleGetLocation}
-                disabled={isGettingLocation || isLoading}
-                className="flex items-center space-x-2"
-              >
-                {isGettingLocation ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Navigation className="h-4 w-4" />
-                )}
-                <span>{isGettingLocation ? 'Getting...' : 'Get Current Location'}</span>
-              </Button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Latitude
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={latitude}
-                  onChange={(e) => setLatitude(e.target.value)}
-                  placeholder="45.4215"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  disabled={isLoading}
-                />
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Submission Method Selector */}
+      {isGaslessAvailable && (
+        <div className="space-y-3">
+          <Label className="text-base font-semibold">Submission Method</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setSubmissionMethod('normal')}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                submissionMethod === 'normal'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2 mb-1">
+                <Wallet className="h-5 w-5 text-blue-600" />
+                <span className="font-semibold text-slate-900">Normal</span>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Longitude
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={longitude}
-                  onChange={(e) => setLongitude(e.target.value)}
-                  placeholder="-75.6972"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  disabled={isLoading}
-                />
+              <p className="text-xs text-slate-600">Pay gas with your wallet</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSubmissionMethod('gasless')}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                submissionMethod === 'gasless'
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2 mb-1">
+                <Zap className="h-5 w-5 text-purple-600" />
+                <span className="font-semibold text-slate-900">Gasless</span>
+                <Badge className="bg-purple-100 text-purple-700 text-[10px] px-1 py-0">FREE</Badge>
               </div>
-            </div>
+              <p className="text-xs text-slate-600">No gas fees required</p>
+            </button>
           </div>
+        </div>
+      )}
 
-          {/* Description Section */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the pothole: size, severity, traffic impact..."
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm h-24 focus:outline-none focus:ring-2 focus:ring-orange-500"
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* Gasless Toggle - Only show if available */}
-          {isGaslessAvailable && (
-            <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Zap className="h-5 w-5 text-green-600" />
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-semibold text-green-900">Gasless Transaction</span>
-                      <Badge className="bg-green-100 text-green-800 border-green-300">FREE</Badge>
-                    </div>
-                    <p className="text-xs text-green-700 mt-1">
-                      No ETH required - just sign the message
-                    </p>
-                  </div>
-                </div>
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useGasless}
-                    onChange={(e) => setUseGasless(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                    disabled={isLoading}
-                  />
-                  <span className="text-sm font-medium text-green-800">Enable</span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <Button 
-            type="submit" 
-            variant="report" 
-            disabled={isLoading || !latitude || !longitude || !description}
-            className="w-full h-12 text-base font-semibold"
+      {/* Location Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="text-base font-semibold">Location</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleGetLocation}
+            disabled={isLoadingLocation}
           >
-            {isLoading ? (
-              <div className="flex items-center space-x-2">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>
-                  {isGaslessSubmitting ? 'Processing Gasless Transaction...' : 
-                   isPending ? 'Submitting to Blockchain...' : 'Confirming Transaction...'}
-                </span>
-              </div>
+            {isLoadingLocation ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Getting Location...
+              </>
             ) : (
-              <div className="flex items-center space-x-2">
-                {useGasless && isGaslessAvailable && <Zap className="h-4 w-4" />}
-                <span>
-                  {useGasless && isGaslessAvailable ? 'Submit Report (Free)' : 'Submit Pothole Report'}
-                </span>
-              </div>
+              <>
+                <Navigation className="h-4 w-4 mr-2" />
+                Use My Location
+              </>
             )}
           </Button>
-        </form>
-
-        {/* Enhanced Help Text */}
-        <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-md">
-          <h4 className="text-sm font-medium text-orange-900 mb-2">Reporting Tips:</h4>
-          <ul className="text-sm text-orange-800 space-y-1">
-            <li>• Use the location button for accurate GPS coordinates</li>
-            <li>• Describe the size and severity of the pothole</li>
-            <li>• Mention if it affects traffic or poses safety risks</li>
-            {useGasless && isGaslessAvailable ? (
-              <li>• ⚡ Gasless mode: You only need to sign - no ETH required!</li>
-            ) : (
-              <li>• You'll earn PBC tokens for valid reports!</li>
-            )}
-          </ul>
         </div>
-      </CardContent>
-    </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="latitude">Latitude</Label>
+            <Input
+              id="latitude"
+              type="number"
+              step="0.000001"
+              placeholder="45.123456"
+              value={latitude}
+              onChange={(e) => setLatitude(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="longitude">Longitude</Label>
+            <Input
+              id="longitude"
+              type="number"
+              step="0.000001"
+              placeholder="7.123456"
+              value={longitude}
+              onChange={(e) => setLongitude(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        {isCheckingDuplicate && (
+          <div className="flex items-center space-x-2 text-sm text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Checking location...</span>
+          </div>
+        )}
+
+        {/* Already Reported Alert */}
+        {alreadyReported && (
+          <Alert className="border-2 border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription>
+              <p className="font-semibold text-red-900">You've already reported this location!</p>
+              <p className="text-sm text-red-700 mt-1">
+                Each user can only report a pothole at a specific location once. Choose a different location or check your reports.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Duplicate Alert */}
+        {!alreadyReported && (
+          <DuplicateAlert
+            isDuplicate={isDuplicate}
+            existingReportId={existingReportId}
+            duplicateCount={duplicateCount}
+          />
+        )}
+      </div>
+
+      {/* Description Section */}
+      <div>
+        <Label htmlFor="description" className="text-base font-semibold">
+          Description
+        </Label>
+        <Textarea
+          id="description"
+          placeholder="Describe the pothole (size, severity, exact location details...)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          required
+          rows={4}
+          className="mt-2"
+        />
+      </div>
+
+      {/* Submit Button */}
+      <div className="flex justify-center">
+        <Button
+          type="submit"
+          className={`w-1/2 ${
+            submissionMethod === 'gasless'
+              ? 'bg-purple-600 hover:bg-purple-700'
+              : 'bg-blue-600 hover:bg-blue-700'
+          }`}
+          disabled={isSubmitting || isCheckingDuplicate || alreadyReported}
+        >
+        {isSubmitting ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            {isPending || isGaslessSubmitting ? 'Submitting...' : 'Confirming...'}
+          </>
+        ) : (
+          <>
+            {submissionMethod === 'gasless' ? (
+              <Zap className="h-4 w-4 mr-2" />
+            ) : (
+              <MapPin className="h-4 w-4 mr-2" />
+            )}
+            {isDuplicate ? 'Confirm Existing Report' : 'Submit Report'}
+            {submissionMethod === 'gasless' && ' (Gasless)'}
+          </>
+        )}
+      </Button>
+      </div>
+
+      {/* Info Text */}
+      <div className="text-center space-y-1">
+        <p className="text-xs text-slate-500">
+          {isDuplicate 
+            ? 'Your confirmation helps prioritize this repair'
+            : 'Earn up to 15 PBC tokens when your report is fixed!'}
+        </p>
+        {submissionMethod === 'gasless' && (
+          <p className="text-xs text-purple-600 font-medium">
+            ⚡ No gas fees - Powered by meta-transactions
+          </p>
+        )}
+      </div>
+    </form>
   )
 }

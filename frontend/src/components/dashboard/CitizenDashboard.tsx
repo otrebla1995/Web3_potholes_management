@@ -3,22 +3,38 @@
 import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
-import { Users, MapPin, Plus, Award, History, Activity } from 'lucide-react'
+import { Users, Plus, History, Activity, TrendingUp } from 'lucide-react'
 import { useCitizenActions } from '@/hooks/useCitizenActions'
 import { PotholeReportForm } from '@/components/forms/PotholeReportForm'
 import { ReportsList } from '@/components/reports/ReportsList'
+import { ContributionStats } from '@/components/reports/ContributionStats'
 
 type ActiveTab = 'overview' | 'report' | 'history'
 
 export function CitizenDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview')
-  const { totalReports, userReports } = useCitizenActions()
+  const { totalReports, userReports, duplicateReports } = useCitizenActions()
 
   const tabs = [
-    { id: 'overview' as const, label: 'Overview', icon: Activity },
-    { id: 'report' as const, label: 'Report Pothole', icon: Plus },
-    { id: 'history' as const, label: 'My Reports', icon: History },
+    { 
+      id: 'overview' as const, 
+      label: 'Overview', 
+      icon: Activity,
+      description: 'Your contribution stats and impact'
+    },
+    { 
+      id: 'report' as const, 
+      label: 'Report Pothole', 
+      icon: Plus,
+      description: 'Submit a new pothole report'
+    },
+    { 
+      id: 'history' as const, 
+      label: 'My Reports', 
+      icon: History,
+      description: 'View your reports and confirmations',
+      badge: userReports.length + duplicateReports.length
+    },
   ]
 
   return (
@@ -26,147 +42,186 @@ export function CitizenDashboard() {
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center space-x-2 mb-4">
-          <Users className="h-8 w-8 text-green-600" />
+          <Users className="h-8 w-8 text-blue-600" />
           <h1 className="text-3xl font-bold text-slate-900">Citizen Portal</h1>
         </div>
         <p className="text-lg text-slate-600">
-          Report potholes and help improve your community
+          Report potholes, earn rewards, and help improve your community
         </p>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex flex-wrap justify-center space-x-1 bg-slate-100 p-1 rounded-lg">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{tab.label}</span>
-            </button>
-          )
-        })}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex flex-col items-start p-4 rounded-lg transition-all ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center space-x-2 mb-1">
+                  <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-blue-600'}`} />
+                  <span className="font-semibold">{tab.label}</span>
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                      isActive 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </div>
+                <p className={`text-xs ${
+                  isActive ? 'text-blue-100' : 'text-slate-500'
+                }`}>
+                  {tab.description}
+                </p>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button 
-              variant="report" 
-              className="h-24 flex-col"
-              onClick={() => setActiveTab('report')}
-            >
-              <Plus className="h-6 w-6 mb-2" />
-              <span>Report New Pothole</span>
-            </Button>
-            <Button 
-              variant="outline" 
-              className="h-24 flex-col"
-              onClick={() => setActiveTab('history')}
-            >
-              <History className="h-6 w-6 mb-2" />
-              <span>View My Reports</span>
-            </Button>
-            <Button variant="outline" className="h-24 flex-col">
-              <MapPin className="h-6 w-6 mb-2" />
-              <span>Area Map</span>
-            </Button>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="animate-fadeIn">
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <ContributionStats />
+            
+            {/* Quick Actions */}
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center space-x-2">
-                  <Award className="h-5 w-5 text-yellow-500" />
-                  <span>My Rewards</span>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <TrendingUp className="h-5 w-5" />
+                  <span>Quick Actions</span>
                 </CardTitle>
+                <CardDescription>
+                  What would you like to do today?
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-green-600 mb-1">0 PBC</div>
-                <div className="text-sm text-slate-600">Total earned tokens</div>
-                <div className="mt-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Reports submitted:</span>
-                    <span className="font-medium">{userReports.length}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Confirmations:</span>
-                    <span className="font-medium">0</span>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button
+                    onClick={() => setActiveTab('report')}
+                    className="h-24 flex flex-col items-center justify-center space-y-2 bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Plus className="h-8 w-8" />
+                    <span>Report New Pothole</span>
+                  </Button>
+                  <Button
+                    onClick={() => setActiveTab('history')}
+                    variant="outline"
+                    className="h-24 flex flex-col items-center justify-center space-y-2 border-2 hover:bg-slate-50"
+                  >
+                    <History className="h-8 w-8" />
+                    <span>View My Reports</span>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Reporting Guide</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-start space-x-2">
-                    <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-orange-600 text-xs font-bold">1</span>
-                    </div>
-                    <span>Get accurate GPS location</span>
+            {/* Recent Activity Preview */}
+            {(userReports.length > 0 || duplicateReports.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Activity</CardTitle>
+                  <CardDescription>
+                    Your latest contributions to the community
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {[...userReports, ...duplicateReports]
+                      .sort((a, b) => b.reportedAt - a.reportedAt)
+                      .slice(0, 3)
+                      .map((report, idx) => {
+                        const isOriginal = userReports.some(r => r.id === report.id)
+                        return (
+                          <div 
+                            key={`preview-${report.id}-${idx}`}
+                            className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className={`h-2 w-2 rounded-full ${
+                                isOriginal ? 'bg-blue-500' : 'bg-purple-500'
+                              }`} />
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">
+                                  {isOriginal ? `Original Report #${report.id}` : `Confirmed Report #${report.id}`}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {new Date(report.reportedAt * 1000).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setActiveTab('history')}
+                            >
+                              View
+                            </Button>
+                          </div>
+                        )
+                      })}
                   </div>
-                  <div className="flex items-start space-x-2">
-                    <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-orange-600 text-xs font-bold">2</span>
-                    </div>
-                    <span>Describe the pothole clearly</span>
-                  </div>
-                  <div className="flex items-start space-x-2">
-                    <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-orange-600 text-xs font-bold">3</span>
-                    </div>
-                    <span>Submit and earn PBC tokens</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Community Impact</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-600">{totalReports}</div>
-                    <div className="text-sm text-slate-600">Total community reports</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">0</div>
-                    <div className="text-sm text-slate-600">Repairs completed</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <Button
+                    variant="link"
+                    className="w-full mt-4"
+                    onClick={() => setActiveTab('history')}
+                  >
+                    View All Reports →
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {activeTab === 'report' && (
-        <div className="max-w-2xl mx-auto">
-          <PotholeReportForm />
-        </div>
-      )}
+        {activeTab === 'report' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Plus className="h-5 w-5" />
+                <span>Report a Pothole</span>
+              </CardTitle>
+              <CardDescription>
+                Help improve your community by reporting potholes. Earn rewards when they're fixed!
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PotholeReportForm />
+            </CardContent>
+          </Card>
+        )}
 
-      {activeTab === 'history' && (
-        <div className="max-w-4xl mx-auto">
+        {activeTab === 'history' && (
           <ReportsList />
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* System Stats Footer */}
+      <Card className="bg-slate-50 border-slate-200">
+        <CardContent className="pt-6">
+          <div className="text-center">
+            <p className="text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{totalReports}</span> total potholes reported in the system
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Together, we're making our roads safer! 🚗✨
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

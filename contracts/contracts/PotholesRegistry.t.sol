@@ -242,7 +242,7 @@ contract PotholesRegistryTest is Test {
         assertEq(report.latitude, VALID_LAT);
         assertEq(report.longitude, VALID_LNG);
         assertEq(report.ipfsHash, IPFS_HASH);
-        assertEq(report.duplicateCount, 1);
+        assertEq(report.duplicateCount, 0);
         assertEq(report.reporter, citizen1);
         assertEq(uint8(report.status), uint8(PotholeStatus.Reported));
 
@@ -295,14 +295,14 @@ contract PotholesRegistryTest is Test {
         // Second report at same location (should be treated as duplicate)
         vm.prank(citizen2);
         vm.expectEmit(true, true, false, true);
-        emit PotholesRegistry.DuplicateReported(1, citizen2, 2, VALID_LAT, VALID_LNG, IPFS_HASH_2);
+        emit PotholesRegistry.DuplicateReported(1, citizen2, 1, VALID_LAT, VALID_LNG, IPFS_HASH_2);
         
         uint256 reportId2 = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
         assertEq(reportId2, 1); // Should return original report ID
 
         // Verify duplicate count increased
         PotholesRegistry.PotholeReport memory report = registry.getReport(1);
-        assertEq(report.duplicateCount, 2);
+        assertEq(report.duplicateCount, 1);
         
         // Verify both users are marked as having reported
         assertTrue(registry.hasUserReported(citizen1, 1));
@@ -500,7 +500,7 @@ contract PotholesRegistryTest is Test {
         // Verify new report has correct status
         PotholesRegistry.PotholeReport memory newReport = registry.getReport(reportId2);
         assertEq(uint8(newReport.status), uint8(PotholeStatus.Reported));
-        assertEq(newReport.duplicateCount, 1);
+        assertEq(newReport.duplicateCount, 0);
         assertEq(newReport.reporter, citizen2);
     }
 
@@ -534,7 +534,7 @@ contract PotholesRegistryTest is Test {
         // Verify new report has correct status
         PotholesRegistry.PotholeReport memory newReport = registry.getReport(reportId2);
         assertEq(uint8(newReport.status), uint8(PotholeStatus.Reported));
-        assertEq(newReport.duplicateCount, 1);
+        assertEq(newReport.duplicateCount, 0);
         assertEq(newReport.reporter, citizen2);
     }
 
@@ -652,7 +652,7 @@ contract PotholesRegistryTest is Test {
         assertEq(report.latitude, VALID_LAT);
         assertEq(report.longitude, VALID_LNG);
         assertEq(report.ipfsHash, IPFS_HASH);
-        assertEq(report.duplicateCount, 1);
+        assertEq(report.duplicateCount, 0);
         assertEq(report.reporter, citizen1);
         assertTrue(report.reportedAt > 0);
         assertEq(uint8(report.status), uint8(PotholeStatus.Reported));
@@ -710,13 +710,13 @@ contract PotholesRegistryTest is Test {
         vm.prank(citizen1);
         uint256 reportId = registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH);
 
-        assertEq(registry.getPriorityScore(reportId), 1);
+        assertEq(registry.getPriorityScore(reportId), 0);
 
         // Add duplicate
         vm.prank(citizen2);
         registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
 
-        assertEq(registry.getPriorityScore(reportId), 2);
+        assertEq(registry.getPriorityScore(reportId), 1);
     }
 
     function test_hasUserReported() public {
@@ -785,8 +785,8 @@ contract PotholesRegistryTest is Test {
         assertEq(reportId3, 1); // Should return original report ID
 
         assertEq(registry.totalReports(), 2);
-        assertEq(registry.getReport(1).duplicateCount, 2);
-        assertEq(registry.getReport(2).duplicateCount, 1);
+        assertEq(registry.getReport(1).duplicateCount, 1);
+        assertEq(registry.getReport(2).duplicateCount, 0);
 
         // Mark first report as completed
         vm.prank(municipal1);
@@ -816,7 +816,7 @@ contract PotholesRegistryTest is Test {
         // 2. Citizen2 reports duplicate
         vm.prank(citizen2);
         registry.submitReport(VALID_LAT, VALID_LNG, IPFS_HASH_2);
-        assertEq(registry.getReport(reportId).duplicateCount, 2);
+        assertEq(registry.getReport(reportId).duplicateCount, 1);
 
         // 3. Municipal authority updates to InProgress
         vm.prank(municipal1);
@@ -831,7 +831,7 @@ contract PotholesRegistryTest is Test {
         // Verify final state
         PotholesRegistry.PotholeReport memory finalReport = registry.getReport(reportId);
         assertEq(uint8(finalReport.status), uint8(PotholeStatus.Completed));
-        assertEq(finalReport.duplicateCount, 2);
+        assertEq(finalReport.duplicateCount, 1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -860,7 +860,7 @@ contract PotholesRegistryTest is Test {
 
         // Should be treated as the same location
         assertEq(reportId1, reportId2);
-        assertEq(registry.getReport(reportId1).duplicateCount, 2);
+        assertEq(registry.getReport(reportId1).duplicateCount, 1);
     }
 
     function test_rewardDistribution_multipleScenarios() public {
@@ -1043,7 +1043,7 @@ contract PotholesRegistryTest is Test {
         registry.submitReport(VALID_LAT, VALID_LNG, "QmDuplicate2");
 
         // Verify duplicate count
-        assertEq(registry.getReport(reportId).duplicateCount, 3);
+        assertEq(registry.getReport(reportId).duplicateCount, 2);
 
         // All users should be marked as having reported
         assertTrue(registry.hasUserReported(citizen1, reportId));
@@ -1051,7 +1051,7 @@ contract PotholesRegistryTest is Test {
         assertTrue(registry.hasUserReported(citizen3, reportId));
 
         // Priority score should reflect duplicates
-        assertEq(registry.getPriorityScore(reportId), 3);
+        assertEq(registry.getPriorityScore(reportId), 2);
 
         // Update status and verify only original reporter gets rewards
         vm.prank(municipal1);

@@ -92,7 +92,7 @@ export function useMunicipalActions() {
         await writeContract({
           address: contractAddress,
           abi: PotholesRegistryABI.abi,
-          functionName: 'updateStatus',
+          functionName: 'updateReportStatus',
           args: [BigInt(reportId), newStatus],
         })
         toast.success(`Updating report #${reportId} to ${statusLabels[newStatus]}...`)
@@ -162,7 +162,12 @@ export function useMunicipalActions() {
       duplicateEvents.forEach(log => {
         const reportId = Number(log.args.originalReportId)
         const count = Number(log.args.newDuplicateCount)
-        duplicateCountMap.set(reportId, count)
+
+        // Only update if this count is higher than what we have
+        const currentCount = duplicateCountMap.get(reportId) ?? 0
+        if (count > currentCount) {
+          duplicateCountMap.set(reportId, count)
+        }
       })
 
       // Step 5: Build reports from events
@@ -198,7 +203,7 @@ export function useMunicipalActions() {
       }
 
       console.log(`Successfully fetched ${fetchedReports.length} reports via events`)
-      
+
       // Sort by newest first
       const sortedReports = fetchedReports.sort((a, b) => b.reportedAt - a.reportedAt)
       setReports(sortedReports)
@@ -258,13 +263,13 @@ export function useMunicipalActions() {
     markCompleted,
     rejectReport,
     refreshData,
-    
+
     // State
     isPending,
     isConfirming,
     isSuccess,
     isLoadingReports,
-    
+
     // Data
     reports: filteredReports,
     allReports: reports,
@@ -272,7 +277,7 @@ export function useMunicipalActions() {
     statusFilter,
     setStatusFilter,
     statusDistribution: getStatusDistribution(),
-    
+
     // Utilities
     intToCoordinate,
   }
