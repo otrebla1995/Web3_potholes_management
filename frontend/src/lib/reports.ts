@@ -41,6 +41,18 @@ export async function getAllReportsFromEvents(
     statusMap.set(Number(log.args.reportId), Number(log.args.newStatus))
   })
 
+  // 2b) All rejections to get reasons
+  const rejectionEvents = await publicClient.getLogs({
+    address: contractAddress,
+    event: parseAbiItem('event PotholeRejected(uint256 indexed reportId, address indexed rejectedBy, string reason)'),
+    fromBlock: BigInt(0),
+    toBlock: 'latest'
+  })
+  const rejectionReasonMap = new Map<number, string>()
+  rejectionEvents.forEach(log => {
+    rejectionReasonMap.set(Number(log.args.reportId), String(log.args.reason))
+  })
+
   // 3) All duplicates
   const duplicateEvents = await publicClient.getLogs({
     address: contractAddress,
@@ -80,6 +92,7 @@ export async function getAllReportsFromEvents(
       reportedAt,
       status,
       priority: 0,
+      rejectionReason: rejectionReasonMap.get(reportId),
     }
     report.priority = calculatePriority(report)
     fetchedReports.push(report)
@@ -93,7 +106,7 @@ export async function getReportAtLocation(
   contractAddress: `0x${string}`,
   latInt: bigint,
   lngInt: bigint,
-  gridPrecision = process.env.NEXT_PUBLIC_GRID_PRECISION ? parseInt(process.env.NEXT_PUBLIC_GRID_PRECISION) : 1000
+  gridPrecision: number
 ) {
   const reportedEvents = await publicClient.getLogs({
     address: contractAddress,
@@ -102,12 +115,13 @@ export async function getReportAtLocation(
     toBlock: 'latest'
   })
 
-  const gridLat = Number(latInt) / gridPrecision
-  const gridLng = Number(lngInt) / gridPrecision
+  const precision = gridPrecision || 1000
+  const gridLat = Number(latInt) / precision
+  const gridLng = Number(lngInt) / precision
 
   const match = reportedEvents.find(log => {
-    const rLat = Number(log.args.latitude) / gridPrecision
-    const rLng = Number(log.args.longitude) / gridPrecision
+    const rLat = Number(log.args.latitude) / precision
+    const rLng = Number(log.args.longitude) / precision
     return Math.floor(rLat) === Math.floor(gridLat) && Math.floor(rLng) === Math.floor(gridLng)
   })
 

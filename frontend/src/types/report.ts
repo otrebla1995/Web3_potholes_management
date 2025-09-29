@@ -10,6 +10,8 @@ export interface PotholeReport {
   reporter: string
   status: number
   priority: number
+  // Present only if the report was rejected and we captured the reason from events
+  rejectionReason?: string
 }
 
 export interface StatusDistribution {

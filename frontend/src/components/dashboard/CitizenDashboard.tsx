@@ -3,7 +3,7 @@
 import { useState, useMemo, Suspense, lazy } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Users, Plus, History, Activity, MapPin } from 'lucide-react'
+import { Users, Plus, History, Activity, MapPin, Map } from 'lucide-react'
 import { useCitizenActions } from '@/hooks/useCitizenActions'
 import { useMapFilters } from '@/hooks/useMapFilters'
 import { useAllReports } from '@/hooks/useAllReports'
@@ -13,6 +13,7 @@ import { ContributionStats } from '@/components/reports/ContributionStats'
 import { MapFilters } from '@/components/filters/MapFilters'
 import { ReportSearchBar } from '@/components/filters/ReportSearchBar'
 import { PotholeReport } from '@/types/report'
+import { useCity } from '@/hooks/useCity'
 
 // Lazy load the map component
 const ReportsMap = lazy(() => import('@/components/map/ReportsMap').then(mod => ({ default: mod.ReportsMap })))
@@ -97,6 +98,8 @@ export function CitizenDashboard() {
 
   const statusDistribution = useMemo(() => getStatusDistribution(), [myReports])
 
+  const { cityName, center, bounds } = useCity()
+
   // Handle report selection from search
   const handleReportSelect = (report: PotholeReport | null) => {
     setSearchedReport(report)
@@ -116,9 +119,15 @@ export function CitizenDashboard() {
             <Users className="h-8 w-8 text-blue-600" />
             <span>Citizen Portal</span>
           </h1>
-          <p className="text-slate-600 mt-2">
-            Report potholes, earn rewards, and help improve your community
-          </p>
+          <div className="text-slate-600 mt-2 flex items-center gap-3">
+            <span>Report potholes, earn rewards, and help improve your community</span>
+            {cityName && (
+              <span className="inline-flex items-center text-sm text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                <Map className="h-4 w-4 mr-1 text-slate-600" />
+                {cityName}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

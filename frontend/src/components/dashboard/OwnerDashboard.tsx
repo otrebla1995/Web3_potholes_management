@@ -4,16 +4,18 @@ import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Shield, Users, Building2, Settings, Activity, TrendingUp } from 'lucide-react'
+import { Shield, Users, Building2, Settings, Activity, TrendingUp, Map } from 'lucide-react'
 import { useOwnerActions } from '@/hooks/useOwnerActions'
 import { AddCitizenForm } from '@/components/forms/AddCitizenForm'
 import { AddMunicipalForm } from '@/components/forms/AddMunicipalForm'
+import { useCity } from '@/hooks/useCity'
 
 type ActiveTab = 'overview' | 'citizens' | 'municipal' | 'settings'
 
 export function OwnerDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview')
   const { citizenCount, totalReports } = useOwnerActions()
+  const { cityName } = useCity()
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: Activity },
@@ -55,6 +57,14 @@ export function OwnerDashboard() {
           )
         })}
       </div>
+      {cityName && (
+        <div className="text-center">
+          <span className="inline-flex items-center text-sm text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+            <Map className="h-4 w-4 mr-1 text-slate-600" />
+            {cityName}
+          </span>
+        </div>
+      )}
 
       {/* Tab Content */}
       {activeTab === 'overview' && (

@@ -20,6 +20,7 @@ import { usePublicClient } from 'wagmi'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { getReportAtLocation } from '@/lib/reports'
+import { useCity } from '@/hooks/useCity'
 
 export function PotholeReportForm() {
   const { 
@@ -51,6 +52,7 @@ export function PotholeReportForm() {
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false)
   const [alreadyReported, setAlreadyReported] = useState(false)
   const [submissionMethod, setSubmissionMethod] = useState<'normal' | 'gasless'>('normal')
+  const { cityName, bounds, isWithinBounds, clampToBounds, center, gridPrecision } = useCity()
 
   // Check for duplicates and if user already reported
   useEffect(() => {
@@ -85,7 +87,13 @@ export function PotholeReportForm() {
         // Check for existing reports at this location via shared helper
         const latInt = coordinateToInt(lat)
         const lngInt = coordinateToInt(lng)
-        const match = await getReportAtLocation(publicClient, contractAddress, latInt, lngInt)
+        const match = await getReportAtLocation(
+          publicClient,
+          contractAddress,
+          latInt,
+          lngInt,
+          gridPrecision ?? 1000
+        )
 
         if (match && match.latestStatus === 0) {
           // We only need an approximate duplicate count for UI hint; leave as 1 for simplicity
@@ -129,6 +137,11 @@ export function PotholeReportForm() {
 
     if (isNaN(lat) || isNaN(lng)) {
       alert('Please enter valid coordinates')
+      return
+    }
+
+    if (bounds && !isWithinBounds(lat, lng)) {
+      alert('Selected location is outside the registered city bounds')
       return
     }
 
@@ -268,10 +281,20 @@ export function PotholeReportForm() {
           latitude={latitude}
           longitude={longitude}
           onChange={(lat, lng) => {
-            setLatitude(lat.toFixed(6))
-            setLongitude(lng.toFixed(6))
+            const [clampedLat, clampedLng] = clampToBounds(lat, lng)
+            setLatitude(clampedLat.toFixed(6))
+            setLongitude(clampedLng.toFixed(6))
           }}
+          center={center ?? [45.4642, 9.19]}
         />
+
+        {cityName && bounds && (
+          <div className="text-xs text-slate-600">
+            City: <span className="font-medium">{cityName}</span> — Bounds: [
+            {bounds.minLat.toFixed(4)}, {bounds.minLng.toFixed(4)}] to [
+            {bounds.maxLat.toFixed(4)}, {bounds.maxLng.toFixed(4)}]
+          </div>
+        )}
 
         {isCheckingDuplicate && (
           <div className="flex items-center space-x-2 text-sm text-slate-500">

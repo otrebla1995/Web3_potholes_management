@@ -7,6 +7,7 @@ import { contractAddresses } from '@/lib/config'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { toast } from 'react-hot-toast'
 import { parseAbiItem } from 'viem'
+import { useCity } from '@/hooks/useCity'
 
 export interface PotholeReport {
   id: number
@@ -26,6 +27,7 @@ export function useCitizenActions() {
   const contractAddress = contractAddresses[chainId as keyof typeof contractAddresses]
   const [userReports, setUserReports] = useState<PotholeReport[]>([])
   const [duplicateReports, setDuplicateReports] = useState<PotholeReport[]>([])
+  const { gridPrecision } = useCity()
 
   // Write contract hook
   const { writeContract, isPending, data: hash } = useWriteContract()
@@ -61,11 +63,11 @@ export function useCitizenActions() {
     return userReports.some(report => {
 
       // check the grid cell is the same
-      const gridPrecision = process.env.NEXT_PUBLIC_GRID_PRECISION || 1000 // 0.001 degrees ~ 100m
-      const latCell = latInt / BigInt(gridPrecision)
-      const lngCell = lngInt / BigInt(gridPrecision)
-      const reportLatCell = report.latitude / BigInt(gridPrecision)
-      const reportLngCell = report.longitude / BigInt(gridPrecision)
+      const precision = BigInt(gridPrecision ?? 1000) // fallback to 0.001 degrees ~ 100m in microdegrees
+      const latCell = latInt / precision
+      const lngCell = lngInt / precision
+      const reportLatCell = report.latitude / precision
+      const reportLngCell = report.longitude / precision
 
       if (latCell === reportLatCell && lngCell === reportLngCell) {
         return true

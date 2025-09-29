@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Popup } from 'react-leaflet'
-import { PotholeReport } from '@/types/report'
+import { PotholeReport, ReportStatus } from '@/types/report'
 import { getStatusLabel, getStatusColor } from '@/lib/mapUtils'
 import { ExternalLink, MapPin, X } from 'lucide-react'
 
@@ -29,7 +29,7 @@ export function MapPopup({ report, userRole, onStatusUpdate }: MapPopupProps) {
   const handleReject = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (rejectReason.trim()) {
-      onStatusUpdate?.(report.id, 3, rejectReason)
+      onStatusUpdate?.(report.id, ReportStatus.Rejected, rejectReason)
       setShowRejectInput(false)
       setRejectReason('')
     }
@@ -109,18 +109,27 @@ export function MapPopup({ report, userRole, onStatusUpdate }: MapPopupProps) {
                 <>
                   <p className="text-xs font-semibold text-slate-700 mb-2">Update Status:</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {report.status === 0 && (
-                      <button
-                        onClick={(e) => handleStatusUpdate(e, 1)}
-                        className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                      >
-                        In Progress
-                      </button>
-                    )}
-                    {(report.status === 0 || report.status === 1) && (
+                    {report.status === ReportStatus.Reported && (
                       <>
                         <button
-                          onClick={(e) => handleStatusUpdate(e, 2)}
+                          onClick={(e) => handleStatusUpdate(e, ReportStatus.InProgress)}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                        >
+                          Start Work
+                        </button>
+                        <button
+                          onClick={handleShowRejectInput}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+
+                    {report.status === ReportStatus.InProgress && (
+                      <>
+                        <button
+                          onClick={(e) => handleStatusUpdate(e, ReportStatus.Completed)}
                           className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
                         >
                           Complete

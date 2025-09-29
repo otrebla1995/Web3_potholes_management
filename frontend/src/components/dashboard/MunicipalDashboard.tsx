@@ -4,13 +4,14 @@ import { useState, Suspense, lazy } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Building2, RefreshCw, BarChart3, Activity, AlertTriangle, MapPin, ArrowUpDown } from 'lucide-react'
+import { Building2, RefreshCw, BarChart3, Activity, AlertTriangle, MapPin, ArrowUpDown, Map } from 'lucide-react'
 import { useMunicipalActions } from '@/hooks/useMunicipalActions'
 import { useMapFilters } from '@/hooks/useMapFilters'
 import { ReportsTable } from '@/components/municipal/ReportsTable'
 import { MapFilters } from '@/components/filters/MapFilters'
 import { ReportSearchBar } from '../filters/ReportSearchBar'
 import { PotholeReport } from '@/types/report'
+import { useCity } from '@/hooks/useCity'
 
 // Lazy load the map component
 const ReportsMap = lazy(() => import('@/components/map/ReportsMap').then(mod => ({ default: mod.ReportsMap })))
@@ -28,6 +29,7 @@ const statusLabels: Record<string, string> = {
 export function MunicipalDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('reports')
   const [searchedReport, setSearchedReport] = useState<PotholeReport | null>(null)
+  const { cityName } = useCity()
 
   const {
     reports,
@@ -153,9 +155,15 @@ export function MunicipalDashboard() {
             <Building2 className="h-8 w-8 text-blue-600" />
             <span>Municipal Dashboard</span>
           </h1>
-          <p className="text-slate-600 mt-2">
-            Manage and monitor pothole reports across the city
-          </p>
+          <div className="text-slate-600 mt-2 flex items-center gap-3">
+            <span>Manage and monitor pothole reports across the city</span>
+            {cityName && (
+              <span className="inline-flex items-center text-sm text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                <Map className="h-4 w-4 mr-1 text-slate-600" />
+                {cityName}
+              </span>
+            )}
+          </div>
         </div>
         <Button
           onClick={refreshData}

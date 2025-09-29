@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css'
 import { MapMarker } from './MapMarker'
 import { MapPopup } from './MapPopup'
 import { PotholeReport } from '@/types/report'
+import { useCity } from '@/hooks/useCity'
 
 // Fix for default marker icons in Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -47,6 +48,7 @@ export function ReportsMap({
   onStatusUpdate,
   centerCoordinates = [45.4642, 9.1900], // Milan as default
 }: ReportsMapProps) {
+  const { center: cityCenter } = useCity()
   
   // Calculate center from reports if not provided
   const mapCenter: [number, number] = reports.length > 0
@@ -54,7 +56,7 @@ export function ReportsMap({
         reports.reduce((sum, r) => sum + Number(r.latitude) / 1000000, 0) / reports.length,
         reports.reduce((sum, r) => sum + Number(r.longitude) / 1000000, 0) / reports.length
       ]
-    : centerCoordinates
+    : (cityCenter ?? centerCoordinates)
 
   return (
     <div className="h-[600px] rounded-lg overflow-hidden border border-slate-200 relative">

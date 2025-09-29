@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { XCircle, X } from 'lucide-react'
-import { PotholeReport } from '@/hooks/useMunicipalActions'
+import { PotholeReport } from '@/types/report'
 import { useMunicipalActions } from '@/hooks/useMunicipalActions'
 
 interface RejectReportModalProps {
