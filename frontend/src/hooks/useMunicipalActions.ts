@@ -92,7 +92,7 @@ export function useMunicipalActions() {
         await writeContract({
           address: contractAddress,
           abi: PotholesRegistryABI.abi,
-          functionName: 'updateStatus',
+          functionName: 'updateReportStatus',
           args: [BigInt(reportId), newStatus],
         })
         toast.success(`Updating report #${reportId} to ${statusLabels[newStatus]}...`)
