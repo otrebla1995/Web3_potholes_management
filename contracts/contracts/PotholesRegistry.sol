@@ -250,6 +250,14 @@ contract PotholesRegistry is ERC2771Context, Ownable, ReentrancyGuard {
         _updateReportStatus(reportId, newStatus, _msgSender(), "");
     }
 
+    function rejectReport(
+        uint256 reportId,
+        string calldata reason
+    ) external onlyMunicipalAuthority validReportId(reportId) {
+        require(bytes(reason).length > 0, "Rejection reason required");
+        _updateReportStatus(reportId, PotholeStatus.Rejected, _msgSender(), reason);
+    }
+
     function batchUpdateStatus(
         uint256[] calldata reportIds,
         PotholeStatus newStatus
