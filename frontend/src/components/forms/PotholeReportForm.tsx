@@ -10,10 +10,17 @@ import { useCitizenActions } from '@/hooks/useCitizenActions'
 import { useGaslessTransactions } from '@/hooks/useGaslessTransactions'
 import { DuplicateAlert } from '@/components/reports/DuplicateAlert'
 import { MapPin, Navigation, Loader2, Zap, Wallet, AlertCircle } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const MapLocationPicker = dynamic(
+  () => import('@/components/map/MapLocationPicker').then(m => m.MapLocationPicker),
+  { ssr: false }
+)
 import { usePublicClient } from 'wagmi'
-import { parseAbiItem } from 'viem'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
+import { getReportAtLocation } from '@/lib/reports'
+import { useCity } from '@/hooks/useCity'
 
 export function PotholeReportForm() {
   const { 
@@ -45,6 +52,7 @@ export function PotholeReportForm() {
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false)
   const [alreadyReported, setAlreadyReported] = useState(false)
   const [submissionMethod, setSubmissionMethod] = useState<'normal' | 'gasless'>('normal')
+  const { cityName, bounds, isWithinBounds, clampToBounds, center, gridPrecision } = useCity()
 
   // Check for duplicates and if user already reported
   useEffect(() => {
@@ -76,63 +84,22 @@ export function PotholeReportForm() {
           return
         }
 
-        // Check for existing reports at this location
+        // Check for existing reports at this location via shared helper
         const latInt = coordinateToInt(lat)
         const lngInt = coordinateToInt(lng)
+        const match = await getReportAtLocation(
+          publicClient,
+          contractAddress,
+          latInt,
+          lngInt,
+          gridPrecision ?? 1000
+        )
 
-        const reportedEvents = await publicClient.getLogs({
-          address: contractAddress,
-          event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
-          fromBlock: BigInt(0),
-          toBlock: 'latest'
-        })
-
-        const GRID_PRECISION = 1000
-        const gridLat = Number(latInt) / GRID_PRECISION
-        const gridLng = Number(lngInt) / GRID_PRECISION
-
-        const matchingReport = reportedEvents.find(log => {
-          const reportLat = Number(log.args.latitude) / GRID_PRECISION
-          const reportLng = Number(log.args.longitude) / GRID_PRECISION
-          return Math.floor(reportLat) === Math.floor(gridLat) && 
-                 Math.floor(reportLng) === Math.floor(gridLng)
-        })
-
-        if (matchingReport) {
-          const reportId = Number(matchingReport.args.reportId)
-          
-          // Check status
-          const statusEvents = await publicClient.getLogs({
-            address: contractAddress,
-            event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
-            args: { reportId: BigInt(reportId) },
-            fromBlock: BigInt(0),
-            toBlock: 'latest'
-          })
-
-          const latestStatus = statusEvents.length > 0 
-            ? Number(statusEvents[statusEvents.length - 1].args.newStatus)
-            : 0
-
-          if (latestStatus === 0) {
-            const duplicateEvents = await publicClient.getLogs({
-              address: contractAddress,
-              event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
-              args: { originalReportId: BigInt(reportId) },
-              fromBlock: BigInt(0),
-              toBlock: 'latest'
-            })
-
-            const count = duplicateEvents.length > 0
-              ? Number(duplicateEvents[duplicateEvents.length - 1].args.newDuplicateCount)
-              : 1
-
-            setIsDuplicate(true)
-            setExistingReportId(reportId)
-            setDuplicateCount(count)
-          } else {
-            setIsDuplicate(false)
-          }
+        if (match && match.latestStatus === 0) {
+          // We only need an approximate duplicate count for UI hint; leave as 1 for simplicity
+          setIsDuplicate(true)
+          setExistingReportId(match.reportId)
+          setDuplicateCount(1)
         } else {
           setIsDuplicate(false)
         }
@@ -170,6 +137,11 @@ export function PotholeReportForm() {
 
     if (isNaN(lat) || isNaN(lng)) {
       alert('Please enter valid coordinates')
+      return
+    }
+
+    if (bounds && !isWithinBounds(lat, lng)) {
+      alert('Selected location is outside the registered city bounds')
       return
     }
 
@@ -303,6 +275,28 @@ export function PotholeReportForm() {
             />
           </div>
         </div>
+
+        {/* Map Picker */}
+        <MapLocationPicker
+          latitude={latitude}
+          longitude={longitude}
+          onChange={(lat, lng) => {
+            const [clampedLat, clampedLng] = clampToBounds(lat, lng)
+            setLatitude(clampedLat.toFixed(6))
+            setLongitude(clampedLng.toFixed(6))
+          }}
+          center={center ?? [45.4642, 9.19]}
+          bounds={bounds}
+          cityName={cityName}
+        />
+
+        {cityName && bounds && (
+          <div className="text-xs text-slate-600">
+            City: <span className="font-medium">{cityName}</span> — Bounds: [
+            {bounds.minLat.toFixed(4)}, {bounds.minLng.toFixed(4)}] to [
+            {bounds.maxLat.toFixed(4)}, {bounds.maxLng.toFixed(4)}]
+          </div>
+        )}
 
         {isCheckingDuplicate && (
           <div className="flex items-center space-x-2 text-sm text-slate-500">

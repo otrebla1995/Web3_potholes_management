@@ -2,13 +2,14 @@
 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useUserRole } from '@/hooks/useUserRole'
+import { useCity } from '@/hooks/useCity'
 import { Badge } from '@/components/ui/Badge'
 import { Construction, Shield, Users, UserX } from 'lucide-react'
 import { USER_ROLES } from '@/lib/utils'
 
 const roleIcons = {
   [USER_ROLES.OWNER]: Shield,
-  [USER_ROLES.MUNICIPAL]: Construction, 
+  [USER_ROLES.MUNICIPAL]: Construction,
   [USER_ROLES.CITIZEN]: Users,
   [USER_ROLES.UNAUTHORIZED]: UserX,
 }
@@ -29,6 +30,7 @@ const roleLabels = {
 
 export function Header() {
   const { role, isLoading, address } = useUserRole()
+  const { cityName } = useCity()
   const RoleIcon = roleIcons[role]
 
   return (
@@ -41,7 +43,15 @@ export function Header() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900">PotholeTracker</h1>
-            <p className="text-sm text-slate-500">Municipal Management System</p>
+            <p className="text-sm text-slate-500">
+              Municipal Management System
+              {cityName && (
+                <>
+                  {" · "}
+                  <span className="font-bold text-slate-700">{cityName}</span>
+                </>
+              )}
+            </p>
           </div>
         </div>
 

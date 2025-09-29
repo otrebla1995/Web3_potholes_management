@@ -1,12 +1,66 @@
-'use client'
+ 'use client'
 
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { MapPin, Users, Award, TrendingUp, CheckCircle } from 'lucide-react'
+import { MapPin, Users, Award, TrendingUp, CheckCircle, Coins } from 'lucide-react'
 import { useCitizenActions } from '@/hooks/useCitizenActions'
+import { useEffect, useMemo, useState } from 'react'
+import { useAccount, useChainId, usePublicClient } from 'wagmi'
+import { contractAddresses } from '@/lib/config'
+import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
+import { formatUnits } from 'viem'
 
 export function ContributionStats() {
   const { userReports, duplicateReports, totalReports } = useCitizenActions()
+  const { address: userAddress } = useAccount()
+  const chainId = useChainId()
+  const publicClient = usePublicClient()
+  const registryAddress = contractAddresses[chainId as keyof typeof contractAddresses]
+
+  // Minimal ERC20 ABI for balance/decimals
+  const ERC20_ABI = useMemo(() => ([
+    { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+    { name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint8' }] },
+  ] as const), [])
+
+  const [pbcBalance, setPbcBalance] = useState<string | null>(null)
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchBalance() {
+      if (!publicClient || !registryAddress || !userAddress) return
+      try {
+        setIsBalanceLoading(true)
+        // 1) Get token address from registry
+        const tokenAddress = await publicClient.readContract({
+          address: registryAddress,
+          abi: PotholesRegistryABI.abi,
+          functionName: 'potholeToken',
+        }) as `0x${string}`
+
+        // 2) Get decimals & user balance
+        const [decimals, balance] = await Promise.all([
+          publicClient.readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: 'decimals' }) as Promise<number>,
+          publicClient.readContract({ address: tokenAddress, abi: ERC20_ABI, functionName: 'balanceOf', args: [userAddress] }) as Promise<bigint>,
+        ])
+
+        if (!cancelled) {
+          const formatted = formatUnits(balance, decimals)
+          setPbcBalance(formatted)
+        }
+      } catch (e) {
+        if (!cancelled) setPbcBalance(null)
+      } finally {
+        if (!cancelled) setIsBalanceLoading(false)
+      }
+    }
+
+    fetchBalance()
+    return () => {
+      cancelled = true
+    }
+  }, [publicClient, registryAddress, userAddress, ERC20_ABI])
 
   // Calculate stats
   const completedReports = userReports.filter(r => r.status === 2).length
@@ -18,6 +72,14 @@ export function ContributionStats() {
     : '0'
 
   const stats = [
+    {
+      label: 'PBC Balance',
+      value: isBalanceLoading ? 'Loading…' : (pbcBalance !== null ? `${Number(pbcBalance).toFixed(2)} PBC` : '—'),
+      icon: Coins,
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-50',
+      borderColor: 'border-teal-200'
+    },
     {
       label: 'Original Reports',
       value: userReports.length,
@@ -41,14 +103,6 @@ export function ContributionStats() {
       color: 'text-green-600',
       bgColor: 'bg-green-50',
       borderColor: 'border-green-200'
-    },
-    {
-      label: 'Rewards Earned',
-      value: `${potentialRewards} PBC`,
-      icon: Award,
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-50',
-      borderColor: 'border-yellow-200'
     }
   ]
 

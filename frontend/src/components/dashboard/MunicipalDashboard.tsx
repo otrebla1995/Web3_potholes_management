@@ -1,16 +1,37 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Building2, RefreshCw, BarChart3, Activity, TrendingUp, AlertTriangle } from 'lucide-react'
+import { Building2, RefreshCw, BarChart3, Activity, AlertTriangle, MapPin, ArrowUpDown, Map } from 'lucide-react'
 import { useMunicipalActions } from '@/hooks/useMunicipalActions'
+import { useMapFilters } from '@/hooks/useMapFilters'
 import { ReportsTable } from '@/components/municipal/ReportsTable'
+import { MapFilters } from '@/components/filters/MapFilters'
+import { ReportSearchBar } from '../filters/ReportSearchBar'
+import { PotholeReport } from '@/types/report'
+import { useCity } from '@/hooks/useCity'
 
-type ActiveTab = 'overview' | 'reports' | 'analytics'
+// Client-only dynamic import for map
+const ReportsMap = dynamic(() => import('@/components/map/ReportsMap').then(mod => mod.ReportsMap), {
+  ssr: false,
+  loading: () => (
+    <Card>
+      <CardContent className="p-8 text-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-slate-600">Loading map...</p>
+        </div>
+      </CardContent>
+    </Card>
+  ),
+})
 
-// Map status codes to display labels
+type ActiveTab = 'overview' | 'reports' | 'analytics' | 'map'
+type SortOption = 'date-desc' | 'date-asc' | 'priority-desc' | 'priority-asc' | 'duplicates-desc'
+
 const statusLabels: Record<string, string> = {
   reported: 'Reported',
   inProgress: 'In Progress',
@@ -20,6 +41,8 @@ const statusLabels: Record<string, string> = {
 
 export function MunicipalDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('reports')
+  const [searchedReport, setSearchedReport] = useState<PotholeReport | null>(null)
+  const { cityName } = useCity()
 
   const {
     reports,
@@ -40,6 +63,27 @@ export function MunicipalDashboard() {
     intToCoordinate,
   } = useMunicipalActions()
 
+  // Map filters hook
+  const {
+    statusFilter: mapStatusFilter,
+    setStatusFilter: setMapStatusFilter,
+    priorityFilter,
+    setPriorityFilter,
+    dateFilter,
+    setDateFilter,
+    filteredReports: filteredMapReports,
+  } = useMapFilters({
+    reports: allReports
+  })
+
+  const sortOptions = [
+    { value: 'date-desc', label: 'Newest First' },
+    { value: 'date-asc', label: 'Oldest First' },
+    { value: 'priority-desc', label: 'Highest Priority' },
+    { value: 'priority-asc', label: 'Lowest Priority' },
+    { value: 'duplicates-desc', label: 'Most Duplicates' },
+  ]
+
   const tabs = [
     {
       id: 'overview' as const,
@@ -54,6 +98,12 @@ export function MunicipalDashboard() {
       description: 'Review and process pothole reports'
     },
     {
+      id: 'map' as const,
+      label: 'Map View',
+      icon: MapPin,
+      description: 'Visualize reports on an interactive map'
+    },
+    {
       id: 'analytics' as const,
       label: 'Analytics',
       icon: BarChart3,
@@ -63,108 +113,127 @@ export function MunicipalDashboard() {
 
   const isLoading = isPending || isConfirming
 
-  // Get high priority reports (priority >= 90)
   const highPriorityReports = allReports.filter(
-    r => r.priority >= 90 && r.status === 0 // 0 = Reported
+    r => r.priority >= 90 && r.status === 0
   )
 
-  // Calculate average response time (for completed reports)
+  const displayedReports = searchedReport ? [searchedReport] : reports
+  const displayedMapReports = searchedReport
+    ? filteredMapReports.filter(r => r.id === searchedReport.id)
+    : filteredMapReports
+
   const getAverageResponseTime = () => {
-    const completedReports = allReports.filter(r => r.status === 2) // 2 = Completed
+    const completedReports = allReports.filter(r => r.status === 2)
     if (completedReports.length === 0) return 0
-    
+
     const totalDays = completedReports.reduce((sum, r) => {
       const days = (Date.now() / 1000 - r.reportedAt) / 86400
       return sum + days
     }, 0)
-    
+
     return Math.round((totalDays / completedReports.length) * 10) / 10
   }
 
-  // Get completion rate
   const getCompletionRate = () => {
     if (allReports.length === 0) return 0
-    return Math.round((statusDistribution.completed / allReports.length) * 100)
+    const completed = allReports.filter(r => r.status === 2).length
+    return Math.round((completed / allReports.length) * 100)
   }
 
-  // Get total duplicates
   const getTotalDuplicates = () => {
-    return allReports.reduce((sum, r) => sum + r.duplicateCount, 0)
+    return allReports.reduce((sum, r) => sum + (r.duplicateCount - 1), 0)
+  }
+
+  const handleReportSelect = (report: PotholeReport | null) => {
+    setSearchedReport(report)
+  }
+
+  // Handle status update from map
+  const handleMapStatusUpdate = async (reportId: number, newStatus: number, reason?: string) => {
+    if (newStatus === 1) {
+      await markInProgress(reportId)
+    } else if (newStatus === 2) {
+      await markCompleted(reportId)
+    } else if (newStatus === 3 && reason) {
+      await rejectReport(reportId, reason)
+    }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="container mx-auto py-8 px-4 space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="text-center flex-1">
-            <div className="flex items-center justify-center space-x-3 mb-2">
-              <Building2 className="h-10 w-10 text-blue-600" />
-              <h1 className="text-4xl font-bold text-slate-900">Municipal Operations</h1>
-            </div>
-            <p className="text-lg text-slate-600">
-              Manage and prioritize pothole repairs efficiently
-            </p>
+    <div className="container mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center space-x-3">
+            <Building2 className="h-8 w-8 text-blue-600" />
+            <span>Municipal Dashboard</span>
+          </h1>
+          <div className="text-slate-600 mt-2 flex items-center gap-3">
+            <span>Manage and monitor pothole reports across the city</span>
+            {cityName && (
+              <span className="inline-flex items-center text-sm text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                <Map className="h-4 w-4 mr-1 text-slate-600" />
+                {cityName}
+              </span>
+            )}
           </div>
-          <Button
-            variant="outline"
-            onClick={refreshData}
-            disabled={isLoading}
-            className="flex items-center space-x-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </Button>
         </div>
+        <Button
+          onClick={refreshData}
+          disabled={isLoading}
+          className="flex items-center space-x-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <span>{isLoading ? 'Refreshing...' : 'Refresh Data'}</span>
+        </Button>
+      </div>
 
-        {/* Navigation Tabs */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      {/* Tabs Navigation */}
+      <div className="mb-8">
+        <div className="border-b border-slate-200">
+          <nav className="-mb-px flex space-x-8">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
-
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`relative flex flex-col items-start p-4 rounded-lg transition-all ${
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
+                  className={`
+                    group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm
+                    transition-colors duration-200
+                    ${isActive
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                    }
+                  `}
                 >
-                  <div className="flex items-center space-x-2 mb-1">
-                    <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-blue-600'}`} />
-                    <span className="font-semibold">{tab.label}</span>
-                  </div>
-                  <p className={`text-xs ${
-                    isActive ? 'text-blue-100' : 'text-slate-500'
-                  }`}>
-                    {tab.description}
-                  </p>
+                  <Icon className={`mr-2 h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                  <span>{tab.label}</span>
                 </button>
               )
             })}
-          </div>
+          </nav>
         </div>
+      </div>
 
+      {/* Tab Content */}
+      <div>
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card className="border-l-4 border-orange-500">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-slate-600">Reported</p>
+                      <p className="text-sm font-medium text-slate-600">New Reports</p>
                       <p className="text-3xl font-bold text-orange-600 mt-1">
                         {statusDistribution.reported}
                       </p>
                     </div>
                     <div className="h-12 w-12 rounded-full bg-orange-100 flex items-center justify-center">
-                      <TrendingUp className="h-6 w-6 text-orange-600" />
+                      <AlertTriangle className="h-6 w-6 text-orange-600" />
                     </div>
                   </div>
                 </CardContent>
@@ -219,7 +288,6 @@ export function MunicipalDashboard() {
               </Card>
             </div>
 
-            {/* High Priority Alerts */}
             <Card className="border-l-4 border-red-500">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -232,49 +300,6 @@ export function MunicipalDashboard() {
               </CardHeader>
               <CardContent>
                 {highPriorityReports.length > 0 ? (
-                  <div className="space-y-3">
-                    {highPriorityReports.slice(0, 5).map((report) => (
-                      <div
-                        key={report.id}
-                        className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200"
-                      >
-                        <div className="flex items-center space-x-4">
-                          <Badge className="bg-red-600 text-white px-3 py-1">
-                            Priority: {report.priority}
-                          </Badge>
-                          <div>
-                            <p className="font-semibold text-slate-900">Report #{report.id}</p>
-                            <p className="text-sm text-slate-600">
-                              {report.duplicateCount} duplicate{report.duplicateCount !== 1 ? 's' : ''} •{' '}
-                              {Math.floor((Date.now() / 1000 - report.reportedAt) / 86400)} days old
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => setActiveTab('reports')}
-                          variant="default"
-                        >
-                          View Details
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <p className="text-slate-500">No high-priority reports at this time</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest reports requiring attention</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {allReports.length > 0 ? (
                   allReports.slice(0, 5).map((report) => (
                     <div
                       key={report.id}
@@ -298,7 +323,7 @@ export function MunicipalDashboard() {
                   ))
                 ) : (
                   <div className="text-center py-8 text-slate-500">
-                    No reports available
+                    No high priority reports
                   </div>
                 )}
               </CardContent>
@@ -309,10 +334,20 @@ export function MunicipalDashboard() {
         {/* Reports Tab */}
         {activeTab === 'reports' && (
           <div className="space-y-6">
-            {/* Minimal Chips Style Filter & Sort */}
+            {/* Search Bar */}
+            <Card>
+              <CardContent className="p-4">
+                <ReportSearchBar
+                  reports={allReports}
+                  onReportSelect={handleReportSelect}
+                  placeholder="Search by Report ID... (e.g., 123)"
+                />
+              </CardContent>
+            </Card>
+            {/* Filters and Sorting */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                {/* Status Pills */}
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                {/* Status Filter */}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Filter:</span>
                   {[
@@ -327,14 +362,14 @@ export function MunicipalDashboard() {
                       <button
                         key={option.key}
                         onClick={() => setStatusFilter(option.key as any)}
-                        className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
-                          isActive
-                            ? 'text-white shadow-lg scale-105'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                        style={isActive ? {
-                          backgroundColor: option.color
-                        } : {}}
+                        className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${isActive ? 'ring-2 ring-offset-2' : ''
+                          }`}
+                        style={{
+                          backgroundColor: isActive ? option.color : 'transparent',
+                          color: isActive ? 'white' : option.color,
+                          borderColor: option.color,
+                          borderWidth: '1px',
+                        }}
                       >
                         {option.label}
                       </button>
@@ -342,37 +377,25 @@ export function MunicipalDashboard() {
                   })}
                 </div>
 
-                {/* Sort Pills */}
-                {setSortOption && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sort:</span>
-                    {[
-                      { key: 'priority-desc', label: '🔥 Priority' },
-                      { key: 'date-desc', label: '📅 Recent' },
-                      { key: 'duplicates-desc', label: '👥 Popular' },
-                      { key: 'date-asc', label: '⏰ Oldest' },
-                    ].map((option) => {
-                      const isActive = sortOption === option.key
-                      return (
-                        <button
-                          key={option.key}
-                          onClick={() => setSortOption(option.key as any)}
-                          className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
-                            isActive
-                              ? 'bg-purple-600 text-white shadow-lg scale-105'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-4 w-4 text-slate-500" />
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sort:</span>
+                  <select
+                    value={sortOption}
+                    onChange={(e) => setSortOption(e.target.value as SortOption)}
+                    className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {sortOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Reports Table */}
             {isLoadingReports ? (
               <Card>
                 <CardContent className="p-8 text-center">
@@ -387,13 +410,99 @@ export function MunicipalDashboard() {
               </Card>
             ) : (
               <ReportsTable
-                reports={reports}
+                reports={displayedReports}
                 onMarkInProgress={markInProgress}
                 onMarkCompleted={markCompleted}
                 onReject={rejectReport}
                 intToCoordinate={intToCoordinate}
                 isPending={isPending}
                 isConfirming={isConfirming}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Map View Tab */}
+        {activeTab === 'map' && (
+          <div className="space-y-6">
+
+            {/* Search Bar */}
+            <Card>
+              <CardContent className="p-4">
+                <ReportSearchBar
+                  reports={allReports}
+                  onReportSelect={handleReportSelect}
+                  placeholder="Search by Report ID to locate on map..."
+                />
+              </CardContent>
+            </Card>
+
+            <MapFilters
+              totalReports={totalReports}
+              statusDistribution={statusDistribution}
+              statusFilter={mapStatusFilter}
+              setStatusFilter={setMapStatusFilter}
+              priorityFilter={priorityFilter}
+              setPriorityFilter={setPriorityFilter}
+              dateFilter={dateFilter}
+              setDateFilter={setDateFilter}
+            />
+
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <MapPin className="h-5 w-5 text-blue-600" />
+                    <span className="text-sm font-medium text-slate-700">
+                      Displaying {displayedMapReports.length} report{displayedMapReports.length !== 1 ? 's' : ''} on map
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-4 text-xs text-slate-500">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                      <span>Reported</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <span>In Progress</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span>Completed</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span>Rejected</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {isLoadingReports ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <p className="text-slate-600">Loading map data...</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : displayedMapReports.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <MapPin className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-700 mb-2">No reports to display</h3>
+                  <p className="text-slate-500">
+                    Try adjusting your filters to see more reports
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <ReportsMap
+                reports={displayedMapReports}
+                userRole="municipal"
+                onStatusUpdate={handleMapStatusUpdate}
               />
             )}
           </div>
@@ -409,7 +518,6 @@ export function MunicipalDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Status Distribution */}
                   <div>
                     <h4 className="font-semibold text-slate-900 mb-4">Status Distribution</h4>
                     <div className="space-y-3">
@@ -421,8 +529,8 @@ export function MunicipalDashboard() {
                               <div
                                 className="h-full bg-blue-600"
                                 style={{
-                                  width: allReports.length > 0 
-                                    ? `${(count / allReports.length) * 100}%` 
+                                  width: allReports.length > 0
+                                    ? `${(count / allReports.length) * 100}%`
                                     : '0%'
                                 }}
                               />
@@ -434,7 +542,6 @@ export function MunicipalDashboard() {
                     </div>
                   </div>
 
-                  {/* Key Metrics */}
                   <div>
                     <h4 className="font-semibold text-slate-900 mb-4">Key Metrics</h4>
                     <div className="space-y-3">

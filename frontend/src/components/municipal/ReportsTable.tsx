@@ -17,8 +17,9 @@ import {
   Users,
   AlertTriangle
 } from 'lucide-react'
-import { PotholeReport, PotholeStatus, statusLabels, statusColors } from '@/hooks/useMunicipalActions'
+import { PotholeStatus, statusLabels, statusColors } from '@/hooks/useMunicipalActions'
 import { RejectReportModal } from './RejectReportModal'
+import { PotholeReport } from '@/types/report'
 
 interface EnhancedReportsTableProps {
   reports: PotholeReport[]
@@ -165,7 +166,7 @@ export function ReportsTable({
                 </div>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 rounded-lg p-4">
                   <div>
                     <div className="flex items-center space-x-2 text-sm font-medium text-slate-700 mb-1">
                       <Calendar className="h-4 w-4" />
@@ -206,6 +207,18 @@ export function ReportsTable({
                     </div>
                     <div className="text-sm text-slate-900 font-mono">
                       {report.reporter.slice(0, 6)}...{report.reporter.slice(-4)}
+                    </div>
+                  </div>
+
+                  {/* Description or Rejection Reason */}
+                  <div className="md:col-span-2">
+                    <div className="flex items-center space-x-2 text-sm font-medium text-slate-700 mb-1">
+                      <span>{report.status === PotholeStatus.Rejected ? 'Rejection Reason' : 'Description'}</span>
+                    </div>
+                    <div className="text-sm text-slate-900">
+                      {report.status === PotholeStatus.Rejected
+                        ? (report.rejectionReason || '—')
+                        : (report.ipfsHash?.replace('description:', '') || '—')}
                     </div>
                   </div>
                 </div>

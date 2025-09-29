@@ -5,6 +5,7 @@ import { useAccount, useChainId, useSignTypedData } from 'wagmi'
 import { contractAddresses } from '@/lib/config'
 import { toast } from 'react-hot-toast'
 import { encodeFunctionData } from 'viem'
+import { useCity } from '@/hooks/useCity'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 
 const FORWARDER_ADDRESS = process.env.NEXT_PUBLIC_FORWARDER_ADDRESS as `0x${string}`
@@ -14,6 +15,7 @@ export function useGaslessTransactions() {
   const chainId = useChainId()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const contractAddress = contractAddresses[chainId as keyof typeof contractAddresses]
+  const { isWithinBounds, clampToBounds, bounds, cityName } = useCity()
 
   // Viem's built-in EIP-712 signing
   const { signTypedDataAsync } = useSignTypedData()
@@ -28,6 +30,15 @@ export function useGaslessTransactions() {
       return null
     }
 
+    // Guard: enforce city bounds before signing/relaying
+    if (bounds && !isWithinBounds(latitude, longitude)) {
+      const [clampedLat, clampedLng] = clampToBounds(latitude, longitude)
+      toast.error(
+        `Location is outside ${cityName || 'city'} bounds. Try a point within [${bounds.minLat.toFixed(4)}, ${bounds.minLng.toFixed(4)}] to [${bounds.maxLat.toFixed(4)}, ${bounds.maxLng.toFixed(4)}].`
+      )
+      return null
+    }
+
     setIsSubmitting(true)
     console.log('Starting gasless transaction...')
 
@@ -37,8 +48,10 @@ export function useGaslessTransactions() {
         return BigInt(Math.round(coord * 1000000))
       }
 
-      const latInt = coordinateToInt(latitude)
-      const lngInt = coordinateToInt(longitude)
+  // Use clamped values if bounds exist (extra safety)
+  const [safeLat, safeLng] = bounds ? clampToBounds(latitude, longitude) : [latitude, longitude]
+  const latInt = coordinateToInt(safeLat)
+  const lngInt = coordinateToInt(safeLng)
       const ipfsHash = `description:${description}`
 
       console.log('Coordinates:', { latInt: latInt.toString(), lngInt: lngInt.toString() })
