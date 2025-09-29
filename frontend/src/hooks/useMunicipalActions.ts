@@ -8,6 +8,7 @@ import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { toast } from 'react-hot-toast'
 import { parseAbiItem } from 'viem'
 import { PotholeReport } from '@/types/report'
+import { getAllReportsFromEvents, calculatePriority } from '@/lib/reports'
 
 export type SortOption = 'date-desc' | 'date-asc' | 'priority-desc' | 'priority-asc' | 'duplicates-desc'
 
@@ -119,29 +120,6 @@ export function useMunicipalActions() {
     }
   }
 
-  // Added priority calculation
-  const calculatePriority = (report: {
-    duplicateCount: number
-    reportedAt: number
-    status: number
-  }): number => {
-    let score = 0
-
-    // Duplicates add 30 points each
-    score += report.duplicateCount * 30
-
-    // Age adds up to 40 points for old reports
-    if (report.status === PotholeStatus.Reported) {
-      const daysOld = (Date.now() / 1000 - report.reportedAt) / (60 * 60 * 24)
-      score += Math.min(daysOld * 2, 40)
-    }
-
-    // Status weights
-    if (report.status === PotholeStatus.Reported) score += 50
-    if (report.status === PotholeStatus.InProgress) score += 30
-
-    return Math.round(score)
-  }
 
   // Added sorting function
   const sortReports = (reportsToSort: PotholeReport[]): PotholeReport[] => {
@@ -157,103 +135,15 @@ export function useMunicipalActions() {
     }
   }
 
-  // OPTIMIZED: Fetch reports using events
+  // Fetch reports using shared event helper
   const fetchAllReportsViaEvents = async () => {
     if (!publicClient || !contractAddress) return
 
     setIsLoadingReports(true)
 
     try {
-      // Step 1: Get all PotholeReported events
-      const reportedEvents = await publicClient.getLogs({
-        address: contractAddress,
-        event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
-        fromBlock: BigInt(0),
-        toBlock: 'latest'
-      })
-
-      console.log(`📋 Found ${reportedEvents.length} PotholeReported events`)
-
-      // Step 2: Get all status update events
-      const statusUpdateEvents = await publicClient.getLogs({
-        address: contractAddress,
-        event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
-        fromBlock: BigInt(0),
-        toBlock: 'latest'
-      })
-
-      console.log(`📋 Found ${statusUpdateEvents.length} status update events`)
-
-      // Step 3: Build status map (reportId -> latest status)
-      const statusMap = new Map<number, number>()
-      statusUpdateEvents.forEach(log => {
-        const reportId = Number(log.args.reportId)
-        const newStatus = Number(log.args.newStatus)
-        statusMap.set(reportId, newStatus)
-      })
-
-      // Step 4: Get duplicate events for counts
-      const duplicateEvents = await publicClient.getLogs({
-        address: contractAddress,
-        event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
-        fromBlock: BigInt(0),
-        toBlock: 'latest'
-      })
-
-      const duplicateCountMap = new Map<number, number>()
-      duplicateEvents.forEach(log => {
-        const reportId = Number(log.args.originalReportId)
-        const count = Number(log.args.newDuplicateCount)
-
-        // Only update if this count is higher than what we have
-        const currentCount = duplicateCountMap.get(reportId) ?? 0
-        if (count > currentCount) {
-          duplicateCountMap.set(reportId, count)
-        }
-      })
-
-      // Step 5: Build reports from events
-      const fetchedReports: PotholeReport[] = []
-
-      for (const log of reportedEvents) {
-        const reportId = Number(log.args.reportId)
-        const reporter = log.args.reporter as string
-        const latitude = log.args.latitude as bigint
-        const longitude = log.args.longitude as bigint
-        const ipfsHash = log.args.ipfsHash as string
-
-        // Get block info for timestamp
-        const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
-        const reportedAt = Number(block.timestamp)
-
-        // Get current status (default to Reported if never updated)
-        const status = statusMap.get(reportId) ?? PotholeStatus.Reported
-
-        // Get duplicate count
-        const duplicateCount = duplicateCountMap.get(reportId) ?? 0
-
-        const report = {
-          id: reportId,
-          reporter,
-          ipfsHash,
-          duplicateCount,
-          latitude,
-          longitude,
-          reportedAt,
-          status,
-          priority: 0 // Placeholder, will calculate next
-        }
-
-        // Calculate priority
-        report.priority = calculatePriority(report)
-
-        fetchedReports.push(report)
-      }
-
+      const fetchedReports = await getAllReportsFromEvents(publicClient, contractAddress)
       console.log(`Successfully fetched ${fetchedReports.length} reports via events`)
-
-      // Sort by newest first
-      // const sortedReports = fetchedReports.sort((a, b) => b.reportedAt - a.reportedAt)
       setReports(fetchedReports)
 
     } catch (error) {

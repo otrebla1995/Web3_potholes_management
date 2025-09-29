@@ -17,9 +17,9 @@ const MapLocationPicker = dynamic(
   { ssr: false }
 )
 import { usePublicClient } from 'wagmi'
-import { parseAbiItem } from 'viem'
 import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
+import { getReportAtLocation } from '@/lib/reports'
 
 export function PotholeReportForm() {
   const { 
@@ -82,63 +82,16 @@ export function PotholeReportForm() {
           return
         }
 
-        // Check for existing reports at this location
+        // Check for existing reports at this location via shared helper
         const latInt = coordinateToInt(lat)
         const lngInt = coordinateToInt(lng)
+        const match = await getReportAtLocation(publicClient, contractAddress, latInt, lngInt)
 
-        const reportedEvents = await publicClient.getLogs({
-          address: contractAddress,
-          event: parseAbiItem('event PotholeReported(uint256 indexed reportId, address indexed reporter, int256 latitude, int256 longitude, string ipfsHash)'),
-          fromBlock: BigInt(0),
-          toBlock: 'latest'
-        })
-
-        const GRID_PRECISION = 1000
-        const gridLat = Number(latInt) / GRID_PRECISION
-        const gridLng = Number(lngInt) / GRID_PRECISION
-
-        const matchingReport = reportedEvents.find(log => {
-          const reportLat = Number(log.args.latitude) / GRID_PRECISION
-          const reportLng = Number(log.args.longitude) / GRID_PRECISION
-          return Math.floor(reportLat) === Math.floor(gridLat) && 
-                 Math.floor(reportLng) === Math.floor(gridLng)
-        })
-
-        if (matchingReport) {
-          const reportId = Number(matchingReport.args.reportId)
-          
-          // Check status
-          const statusEvents = await publicClient.getLogs({
-            address: contractAddress,
-            event: parseAbiItem('event PotholeStatusUpdated(uint256 indexed reportId, uint8 oldStatus, uint8 newStatus, address indexed updatedBy)'),
-            args: { reportId: BigInt(reportId) },
-            fromBlock: BigInt(0),
-            toBlock: 'latest'
-          })
-
-          const latestStatus = statusEvents.length > 0 
-            ? Number(statusEvents[statusEvents.length - 1].args.newStatus)
-            : 0
-
-          if (latestStatus === 0) {
-            const duplicateEvents = await publicClient.getLogs({
-              address: contractAddress,
-              event: parseAbiItem('event DuplicateReported(uint256 indexed originalReportId, address indexed duplicateReporter, uint256 newDuplicateCount, int256 latitude, int256 longitude, string ipfsHash)'),
-              args: { originalReportId: BigInt(reportId) },
-              fromBlock: BigInt(0),
-              toBlock: 'latest'
-            })
-
-            const count = duplicateEvents.length > 0
-              ? Number(duplicateEvents[duplicateEvents.length - 1].args.newDuplicateCount)
-              : 1
-
-            setIsDuplicate(true)
-            setExistingReportId(reportId)
-            setDuplicateCount(count)
-          } else {
-            setIsDuplicate(false)
-          }
+        if (match && match.latestStatus === 0) {
+          // We only need an approximate duplicate count for UI hint; leave as 1 for simplicity
+          setIsDuplicate(true)
+          setExistingReportId(match.reportId)
+          setDuplicateCount(1)
         } else {
           setIsDuplicate(false)
         }
