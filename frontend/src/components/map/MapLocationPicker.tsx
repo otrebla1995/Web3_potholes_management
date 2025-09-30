@@ -136,7 +136,7 @@ export function MapLocationPicker({
 
       {/* Bounds label */}
       {bounds && (
-        <div className="absolute left-3 top-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md shadow text-xs text-slate-700 border border-slate-200 animate-fadeIn">
+        <div className="absolute right-3 top-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md shadow text-xs text-slate-700 border border-slate-200 animate-fadeIn">
           <span className="mr-1 inline-flex h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.8)]" />
           City bounds{cityName ? `: ${cityName}` : ''}
         </div>

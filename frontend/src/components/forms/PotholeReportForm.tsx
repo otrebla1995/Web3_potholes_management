@@ -21,6 +21,7 @@ import PotholesRegistryABI from '@/contracts/abi/PotholesRegistry.json'
 import { Alert, AlertDescription } from '@/components/ui/Alert'
 import { getReportAtLocation } from '@/lib/reports'
 import { useCity } from '@/hooks/useCity'
+import { queryLocationData, type OverpassResult } from '@/lib/overpass'
 
 export function PotholeReportForm() {
   const { 
@@ -53,6 +54,8 @@ export function PotholeReportForm() {
   const [alreadyReported, setAlreadyReported] = useState(false)
   const [submissionMethod, setSubmissionMethod] = useState<'normal' | 'gasless'>('normal')
   const { cityName, bounds, isWithinBounds, clampToBounds, center, gridPrecision } = useCity()
+  const [locationData, setLocationData] = useState<OverpassResult | null>(null)
+  const [isLoadingLocationData, setIsLoadingLocationData] = useState(false)
 
   // Check for duplicates and if user already reported
   useEffect(() => {
@@ -115,6 +118,39 @@ export function PotholeReportForm() {
     const timer = setTimeout(checkLocation, 500)
     return () => clearTimeout(timer)
   }, [latitude, longitude, publicClient, contractAddress, coordinateToInt, hasUserReportedAtLocation])
+
+  // Query Overpass API for surface and nearby buildings
+  useEffect(() => {
+    const fetchLocationData = async () => {
+      if (!latitude || !longitude) {
+        setLocationData(null)
+        return
+      }
+
+      const lat = parseFloat(latitude)
+      const lng = parseFloat(longitude)
+
+      if (isNaN(lat) || isNaN(lng)) {
+        setLocationData(null)
+        return
+      }
+
+      setIsLoadingLocationData(true)
+
+      try {
+        const data = await queryLocationData(lat, lng)
+        setLocationData(data)
+      } catch (error) {
+        console.error('Error fetching location data:', error)
+        setLocationData(null)
+      } finally {
+        setIsLoadingLocationData(false)
+      }
+    }
+
+    const timer = setTimeout(fetchLocationData, 800)
+    return () => clearTimeout(timer)
+  }, [latitude, longitude])
 
   const handleGetLocation = async () => {
     setIsLoadingLocation(true)
@@ -302,6 +338,61 @@ export function PotholeReportForm() {
           <div className="flex items-center space-x-2 text-sm text-slate-500">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>Checking location...</span>
+          </div>
+        )}
+
+        {/* Location Data from Overpass */}
+        {(locationData || isLoadingLocationData) && (
+          <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+            <h3 className="font-semibold text-sm text-slate-900">Location Information</h3>
+
+            {isLoadingLocationData ? (
+              <div className="flex items-center space-x-2 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading location details...</span>
+              </div>
+            ) : locationData ? (
+              <>
+                {/* Surface Material */}
+                {locationData.surface && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-700">Surface Material:</p>
+                    <Badge className="bg-blue-100 text-blue-800 capitalize">
+                      {locationData.surface.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                )}
+
+                {/* Nearby Buildings */}
+                {locationData.buildings.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-700">
+                      Nearby Important Buildings ({locationData.buildings.length}):
+                    </p>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {locationData.buildings.map((building, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-start justify-between text-xs bg-white rounded px-2 py-1.5"
+                        >
+                          <div className="flex-1">
+                            <span className="font-medium text-slate-900">{building.name}</span>
+                            <span className="text-slate-500 ml-1.5">({building.type})</span>
+                          </div>
+                          {building.distance !== undefined && (
+                            <span className="text-slate-600 ml-2">{building.distance}m</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!locationData.surface && locationData.buildings.length === 0 && (
+                  <p className="text-xs text-slate-500">No additional location data available</p>
+                )}
+              </>
+            ) : null}
           </div>
         )}
 
