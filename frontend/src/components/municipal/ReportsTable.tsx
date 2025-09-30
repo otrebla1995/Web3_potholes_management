@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { PotholeStatus, statusLabels, statusColors } from '@/hooks/useMunicipalActions'
 import { RejectReportModal } from './RejectReportModal'
+import { ReportDetailsModal } from './ReportDetailsModal'
 import { PotholeReport } from '@/types/report'
 
 interface EnhancedReportsTableProps {
@@ -41,6 +42,7 @@ export function ReportsTable({
   isConfirming
 }: EnhancedReportsTableProps) {
   const [rejectingReport, setRejectingReport] = useState<PotholeReport | null>(null)
+  const [selectedReport, setSelectedReport] = useState<PotholeReport | null>(null)
   
   const isLoading = isPending || isConfirming
 
@@ -89,9 +91,10 @@ export function ReportsTable({
           const PriorityIcon = getPriorityIcon(report.priority)
           
           return (
-            <Card 
-              key={report.id} 
-              className="border-2 border-slate-200 hover:border-blue-300 hover:shadow-lg transition-all duration-200"
+            <Card
+              key={report.id}
+              className="border-2 border-slate-200 hover:border-blue-300 hover:shadow-lg transition-all duration-200 cursor-pointer"
+              onClick={() => setSelectedReport(report)}
             >
               <CardContent className="p-6">
                 {/* Header Section */}
@@ -133,7 +136,10 @@ export function ReportsTable({
                   <div className="flex flex-col space-y-2">
                     {report.status === PotholeStatus.Reported && (
                       <Button
-                        onClick={() => onMarkInProgress(report.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onMarkInProgress(report.id)
+                        }}
                         disabled={isLoading}
                         className="flex items-center space-x-2"
                       >
@@ -143,7 +149,10 @@ export function ReportsTable({
                     )}
                     {report.status === PotholeStatus.InProgress && (
                       <Button
-                        onClick={() => onMarkCompleted(report.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onMarkCompleted(report.id)
+                        }}
                         disabled={isLoading}
                         className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
                       >
@@ -154,7 +163,10 @@ export function ReportsTable({
                     {report.status !== PotholeStatus.Completed && report.status !== PotholeStatus.Rejected && (
                       <Button
                         variant="outline"
-                        onClick={() => setRejectingReport(report)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRejectingReport(report)
+                        }}
                         disabled={isLoading}
                         className="flex items-center space-x-2 text-red-600 border-red-300 hover:bg-red-50"
                       >
@@ -250,6 +262,16 @@ export function ReportsTable({
           )
         })}
       </div>
+
+      {/* Report Details Modal */}
+      {selectedReport && (
+        <ReportDetailsModal
+          report={selectedReport}
+          isOpen={!!selectedReport}
+          onClose={() => setSelectedReport(null)}
+          intToCoordinate={intToCoordinate}
+        />
+      )}
 
       {/* Reject Modal */}
       {rejectingReport && (

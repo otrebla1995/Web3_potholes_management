@@ -1,8 +1,17 @@
 export interface OverpassResult {
   surface?: string
+  roadType?: string // highway classification (residential, primary, secondary, etc.)
+  lanes?: string
+  maxSpeed?: string
+  lighting?: string // yes/no/limited
   buildings: Array<{
     name: string
     type: string
+    distance?: number
+  }>
+  publicTransport: Array<{
+    name: string
+    type: string // bus_stop, tram_stop, etc.
     distance?: number
   }>
 }
@@ -22,13 +31,14 @@ export async function queryLocationData(
   radius: number = 100
 ): Promise<OverpassResult> {
   // Overpass QL query to get:
-  // 1. Surface of the nearest way (road)
+  // 1. Surface, highway type, lanes, speed limit, and lighting from nearest road
   // 2. Important buildings within radius (amenities, buildings with names)
+  // 3. Public transport stops within radius
   const query = `
     [out:json][timeout:25];
     (
-      // Get nearest way with surface tag
-      way(around:50,${lat},${lng})["highway"]["surface"];
+      // Get nearest way with highway tag (will include surface, lanes, maxspeed, lit)
+      way(around:50,${lat},${lng})["highway"];
 
       // Get important buildings/amenities
       node(around:${radius},${lat},${lng})["amenity"]["name"];
@@ -37,6 +47,12 @@ export async function queryLocationData(
       way(around:${radius},${lat},${lng})["building"]["name"];
       node(around:${radius},${lat},${lng})["tourism"]["name"];
       way(around:${radius},${lat},${lng})["tourism"]["name"];
+
+      // Get public transport stops
+      node(around:${radius},${lat},${lng})["highway"="bus_stop"];
+      node(around:${radius},${lat},${lng})["public_transport"="platform"];
+      node(around:${radius},${lat},${lng})["railway"="tram_stop"];
+      node(around:${radius},${lat},${lng})["railway"="station"];
     );
     out body;
     >;
@@ -62,17 +78,19 @@ export async function queryLocationData(
   } catch (error) {
     console.error('Error querying Overpass API:', error)
     return {
-      buildings: []
+      buildings: [],
+      publicTransport: []
     }
   }
 }
 
 /**
- * Parse Overpass API response to extract surface and buildings
+ * Parse Overpass API response to extract road data, buildings, and public transport
  */
 function parseOverpassData(data: any, lat: number, lng: number): OverpassResult {
   const result: OverpassResult = {
-    buildings: []
+    buildings: [],
+    publicTransport: []
   }
 
   if (!data.elements || !Array.isArray(data.elements)) {
@@ -80,43 +98,117 @@ function parseOverpassData(data: any, lat: number, lng: number): OverpassResult 
   }
 
   const seenBuildings = new Set<string>()
+  const seenTransport = new Set<string>()
 
   for (const element of data.elements) {
-    // Extract surface from ways
-    if (element.tags?.surface && !result.surface) {
-      result.surface = element.tags.surface
+    // Extract road information from ways with highway tag
+    if (element.type === 'way' && element.tags?.highway) {
+      // Extract surface material (if not already set)
+      if (element.tags.surface && !result.surface) {
+        result.surface = element.tags.surface
+      }
+
+      // Extract road type/classification (if not already set)
+      if (element.tags.highway && !result.roadType) {
+        result.roadType = element.tags.highway
+      }
+
+      // Extract number of lanes (if not already set)
+      if (element.tags.lanes && !result.lanes) {
+        result.lanes = element.tags.lanes
+      }
+
+      // Extract speed limit (if not already set)
+      if (element.tags.maxspeed && !result.maxSpeed) {
+        result.maxSpeed = element.tags.maxspeed
+      }
+
+      // Extract lighting information (if not already set)
+      if (element.tags.lit && !result.lighting) {
+        result.lighting = element.tags.lit
+      }
+    }
+
+    // Extract public transport stops
+    if (element.type === 'node') {
+      const isTransport = element.tags?.highway === 'bus_stop' ||
+                         element.tags?.public_transport === 'platform' ||
+                         element.tags?.railway === 'tram_stop' ||
+                         element.tags?.railway === 'station'
+
+      if (isTransport) {
+        const name = element.tags.name || 'Unnamed stop'
+        const key = `${name}-${element.lat}-${element.lon}`
+
+        if (!seenTransport.has(key)) {
+          seenTransport.add(key)
+
+          const type = element.tags.highway === 'bus_stop' ? 'bus_stop' :
+                      element.tags.railway === 'tram_stop' ? 'tram_stop' :
+                      element.tags.railway === 'station' ? 'station' :
+                      'platform'
+
+          const distance = calculateDistance(lat, lng, element.lat, element.lon)
+
+          result.publicTransport.push({
+            name,
+            type,
+            distance
+          })
+        }
+      }
     }
 
     // Extract important buildings/amenities with names
     if (element.tags?.name) {
-      const name = element.tags.name
+      const isBuilding = element.tags.amenity ||
+                        element.tags.tourism ||
+                        element.tags.building
 
-      // Avoid duplicates
-      if (seenBuildings.has(name)) continue
-      seenBuildings.add(name)
+      // Skip if it's already counted as public transport
+      const isTransport = element.tags?.highway === 'bus_stop' ||
+                         element.tags?.public_transport === 'platform' ||
+                         element.tags?.railway === 'tram_stop' ||
+                         element.tags?.railway === 'station'
 
-      // Determine type
-      const type = element.tags.amenity ||
-                   element.tags.tourism ||
-                   element.tags.building ||
-                   'building'
+      if (isBuilding && !isTransport) {
+        const name = element.tags.name
 
-      // Calculate approximate distance if coordinates available
-      let distance: number | undefined
-      if (element.lat && element.lon) {
-        distance = calculateDistance(lat, lng, element.lat, element.lon)
+        // Avoid duplicates
+        if (seenBuildings.has(name)) continue
+        seenBuildings.add(name)
+
+        // Determine type
+        const type = element.tags.amenity ||
+                     element.tags.tourism ||
+                     element.tags.building ||
+                     'building'
+
+        // Calculate approximate distance if coordinates available
+        let distance: number | undefined
+        if (element.lat && element.lon) {
+          distance = calculateDistance(lat, lng, element.lat, element.lon)
+        }
+
+        result.buildings.push({
+          name,
+          type,
+          distance
+        })
       }
-
-      result.buildings.push({
-        name,
-        type,
-        distance
-      })
     }
   }
 
   // Sort buildings by distance if available
   result.buildings.sort((a, b) => {
+    if (a.distance !== undefined && b.distance !== undefined) {
+      return a.distance - b.distance
+    }
+    return 0
+  })
+
+  // Sort public transport by distance
+  result.publicTransport.sort((a, b) => {
     if (a.distance !== undefined && b.distance !== undefined) {
       return a.distance - b.distance
     }

@@ -80,7 +80,7 @@ export async function getAllReportsFromEvents(
     const block = await publicClient.getBlock({ blockNumber: log.blockNumber })
     const reportedAt = Number(block.timestamp)
     const status = statusMap.get(reportId) ?? 0
-    const duplicateCount = duplicateCountMap.get(reportId) ?? 1
+    const duplicateCount = duplicateCountMap.get(reportId) ?? 0
 
     const report: PotholeReport = {
       id: reportId,
