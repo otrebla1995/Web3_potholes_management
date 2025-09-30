@@ -9,6 +9,7 @@ import { PotholeReport } from '@/types/report'
 import { statusLabels, statusColors, PotholeStatus } from '@/hooks/useMunicipalActions'
 import dynamic from 'next/dynamic'
 import { queryLocationData, type OverpassResult } from '@/lib/overpass'
+import { calculatePriority } from '@/lib/reports'
 
 const MapLocationPicker = dynamic(
   () => import('@/components/map/MapLocationPicker').then(m => m.MapLocationPicker),
@@ -25,6 +26,7 @@ interface ReportDetailsModalProps {
 export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }: ReportDetailsModalProps) {
   const [locationData, setLocationData] = useState<OverpassResult | null>(null)
   const [isLoadingLocationData, setIsLoadingLocationData] = useState(false)
+  const [enhancedPriority, setEnhancedPriority] = useState<number>(report.priority)
 
   const latitude = intToCoordinate(report.latitude)
   const longitude = intToCoordinate(report.longitude)
@@ -38,16 +40,25 @@ export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }:
       try {
         const data = await queryLocationData(latitude, longitude)
         setLocationData(data)
+
+        // Recalculate priority with location data
+        const newPriority = calculatePriority({
+          duplicateCount: report.duplicateCount,
+          reportedAt: report.reportedAt,
+          status: report.status
+        }, data)
+        setEnhancedPriority(newPriority)
       } catch (error) {
         console.error('Error fetching location data:', error)
         setLocationData(null)
+        setEnhancedPriority(report.priority)
       } finally {
         setIsLoadingLocationData(false)
       }
     }
 
     fetchLocationData()
-  }, [isOpen, latitude, longitude])
+  }, [isOpen, latitude, longitude, report.duplicateCount, report.reportedAt, report.status, report.priority])
 
   const getPriorityColor = (priority: number) => {
     if (priority >= 90) return 'bg-red-100 text-red-800 border-red-300'
@@ -69,7 +80,7 @@ export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }:
     return CheckCircle
   }
 
-  const PriorityIcon = getPriorityIcon(report.priority)
+  const PriorityIcon = getPriorityIcon(enhancedPriority)
 
   if (!isOpen) return null
 
@@ -86,13 +97,16 @@ export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }:
           <div className="flex items-start space-x-4">
             {/* Priority Badge */}
             <div className="flex flex-col items-center">
-              <div className={`text-2xl font-bold px-4 py-2 rounded-lg border-2 ${getPriorityColor(report.priority)}`}>
-                {report.priority}
+              <div className={`text-2xl font-bold px-4 py-2 rounded-lg border-2 ${getPriorityColor(enhancedPriority)} transition-colors duration-300`}>
+                {enhancedPriority}
+                {isLoadingLocationData && (
+                  <span className="text-xs block text-slate-500">updating...</span>
+                )}
               </div>
               <div className="flex items-center space-x-1 mt-1">
                 <PriorityIcon className="h-3 w-3 text-slate-600" />
                 <span className="text-xs font-medium text-slate-600">
-                  {getPriorityLabel(report.priority)}
+                  {getPriorityLabel(enhancedPriority)}
                 </span>
               </div>
             </div>
@@ -363,7 +377,7 @@ export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }:
           </div>
 
           {/* Priority Explanation for High Priority Items */}
-          {report.priority >= 70 && report.status === PotholeStatus.Reported && (
+          {enhancedPriority >= 70 && report.status === PotholeStatus.Reported && (
             <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-r-lg">
               <div className="flex items-start space-x-3">
                 <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -379,6 +393,18 @@ export function ReportDetailsModal({ report, isOpen, onClose, intToCoordinate }:
                     <span className="block">
                       • Pending for {Math.floor((Date.now() / 1000 - report.reportedAt) / 86400)} days
                     </span>
+                    {locationData?.roadType && (
+                      <span className="block">• Located on {locationData.roadType.replace('_', ' ')} road</span>
+                    )}
+                    {locationData?.maxSpeed && parseInt(locationData.maxSpeed) >= 50 && (
+                      <span className="block">• High speed limit ({locationData.maxSpeed})</span>
+                    )}
+                    {locationData?.publicTransport && locationData.publicTransport.length > 0 && (
+                      <span className="block">• Near public transport ({locationData.publicTransport.length} stop{locationData.publicTransport.length !== 1 ? 's' : ''})</span>
+                    )}
+                    {locationData?.lighting === 'no' && (
+                      <span className="block">• No street lighting (increased danger at night)</span>
+                    )}
                   </p>
                 </div>
               </div>
